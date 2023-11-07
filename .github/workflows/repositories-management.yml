@@ -23,7 +23,10 @@ jobs:
       - run: |
           ORG_NAME="HiromiShikata"
           # REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name -q '.[].name')
-          REPO_LIST=("template-typescript" "hashigoya-private")
+          REPO_LIST=(
+            "template-typescript"
+            "hashigoya-private"
+          )
           for REPO in $REPO_LIST; do
             gh repo clone $ORG_NAME/$REPO
             cp .github/workflows/assign-all-cards-to-owner.yml $REPO/.github/workflows/assign-all-cards-to-owner.yml
