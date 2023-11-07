@@ -67,3 +67,40 @@ jobs:
         for repo in $(gh repo list HiromiShikata --limit 100 --json name --jq '.[].name'); do
           github-label-sync --access-token $GITHUB_TOKEN --labels ./labels.yaml HiromiShikata/$repo
         done
+
+
+  branch_protection:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply branch protection
+        uses: actions/github-script@v5
+        with:
+          github-token: ${{ secrets.GH_TOKEN }}
+          script: |
+            const orgName = "HiromiShikata"
+            const repoList = ["template-typescript", "hashigoya-private",]
+            const branch = 'main'
+            const protectionRules = {
+              required_status_checks: {
+                strict: true,
+                contexts: ['test', 'build']
+              },
+              enforce_admins: true,
+              required_pull_request_reviews: {
+                required_approving_review_count: 1
+              },
+              restrictions: null
+            }
+
+            for (const repo of repoList) {
+              github.rest.repos.updateBranchProtection({
+                owner: orgName,
+                repo,
+                branch,
+                ...protectionRules
+              }).then(() => {
+                console.log(`Branch protection applied to ${repo}`);
+              }).catch((error) => {
+                console.error(`Error applying branch protection to ${repo}: ${error}`);
+              });
+            }
