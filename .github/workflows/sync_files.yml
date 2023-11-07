@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-
       - run: |
           sudo apt-get update
           sudo apt-get install gh
@@ -51,3 +50,20 @@ jobs:
             cd ..
             rm -rf $REPO
           done
+
+  label-sync:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+      
+    - name: Install GitHub Label Sync
+      run: npm install -g github-label-sync
+      
+    - name: Sync Labels
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        for repo in $(gh repo list HiromiShikata --limit 100 --json name --jq '.[].name'); do
+          github-label-sync --access-token $GITHUB_TOKEN --labels ./labels.yaml HiromiShikata/$repo
+        done
