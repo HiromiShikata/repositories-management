@@ -1,0 +1,145 @@
+name: Repositories Management
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/**'
+      - 'labels.yaml'
+      - 'renovate.json'
+
+env:
+  ORG_NAME: HiromiShikata
+
+jobs:
+  update-repos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_BOT_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update
+          sudo apt-get install gh
+      - run: |
+          echo $GH_BOT_TOKEN | gh auth login --with-token
+      - name: Sync Files to All repositories
+        run: |
+          ORG_NAME="${{ env.ORG_NAME }}"
+          GITHUB_USER=$(curl -s -H "Authorization: token $GH_BOT_TOKEN" https://api.github.com/user | jq -r '.login')
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
+          FILES_TO_SYNC=(
+            ".github/workflows/umino-project.yml"
+            ".github/workflows/commit-lint.yml"
+            ".github/workflows/configs/commitlint.config.js"
+            ".github/workflows/create-pr.yml"
+            ".github/workflows/empty-format-test-job.yml"
+            "renovate.json"
+            )
+          for REPO in $REPO_LIST; do
+            gh repo clone $ORG_NAME/$REPO
+            for FILE in "${FILES_TO_SYNC[@]}"; do
+              DIRECTORY=$(dirname $FILE)
+              mkdir -p $REPO/$DIRECTORY
+              cp $FILE $REPO/$FILE
+            done
+            cd $REPO
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git diff
+            git add .
+            git diff --staged --quiet && { echo "No changes in $REPO"; cd ..; rm -rf $REPO; continue; }
+            git commit -m "autogen: updated common files in $ORG_NAME" 
+            ACTION_RUN_ID=${{ github.run_id }}
+            ACTION_LINK="https://github.com/${{ github.repository }}/actions/runs/$ACTION_RUN_ID"
+            BRANCH_NAME="update-common-files-$(date +%Y%m%d%H%M%S)"
+            git switch -c $BRANCH_NAME
+            git remote set-url origin https://$GITHUB_USER:$GH_BOT_TOKEN@github.com/$ORG_NAME/$REPO.git
+            git remote -v
+            git remote show origin
+            git push origin $BRANCH_NAME
+            gh pr create --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK"
+            cd ..
+            rm -rf $REPO
+          done
+
+  label-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Install GitHub Label Sync
+      run: npm install -g github-label-sync
+      
+    - name: Sync Labels
+      run: |
+        ORG_NAME="${{ env.ORG_NAME }}"
+        for repo in $(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name'); do
+          github-label-sync --allow-added-labels --access-token ${{ env.GH_TOKEN }} --labels ./labels.yaml ${ORG_NAME}/$repo
+        done
+
+  repository-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - name: Update repository settings for all repositories
+        run: |
+          ORG_NAME="${{ env.ORG_NAME }}"
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
+          GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
+  
+          for REPO in $REPO_LIST; do
+            curl -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
+                 -H "Accept: application/vnd.github.v3+json" \
+                 "https://api.github.com/repos/$ORG_NAME/$REPO" \
+                 -d '{
+                       "delete_branch_on_merge": true,
+                       "allow_auto_merge": true,
+                       "allow_rebase_merge": false,
+                       "allow_squash_merge": false
+                     }'
+
+            if [ $? -eq 0 ]; then
+              echo "Auto-merge and branch deletion settings updated for $REPO"
+            else
+              echo "Error updating settings for $REPO"
+            fi
+          done
+      - name: Update branch protection settings for all repositories
+        run: |
+          ORG_NAME="${{ env.ORG_NAME }}"
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
+          GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
+  
+          for REPO in $REPO_LIST; do
+            curl -X PUT -H "Authorization: token $GH_BOT_TOKEN" \
+                 -H "Accept: application/vnd.github.v3+json" \
+                 "https://api.github.com/repos/$ORG_NAME/$REPO/branches/main/protection" \
+                 -d '{
+                      "required_status_checks": {
+                        "strict": true,
+                        "contexts": ["test", "format"]
+                      },
+                      "enforce_admins": true,
+                      "required_pull_request_reviews": {
+                        "required_approving_review_count": 0
+                      },
+                      "restrictions": null
+                    }'
+
+            if [ $? -eq 0 ]; then
+              echo "Auto-merge and branch deletion settings updated for $REPO"
+            else
+              echo "Error updating settings for $REPO"
+            fi
+          done
