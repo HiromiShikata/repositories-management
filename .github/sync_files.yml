@@ -1,0 +1,36 @@
+name: Sync files
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'
+
+jobs:
+  update-repos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - run: |
+          sudo apt-get update
+          sudo apt-get install gh
+
+      - run: |
+          echo '${{ secrets.GH_TOKEN }}' | gh auth login --with-token
+
+      - run: |
+          ORG_NAME="your_org"
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name -q '.[].name')
+          for REPO in $REPO_LIST; do
+            gh repo clone $ORG_NAME/$REPO
+            cp path/to/file1 $REPO/path/to/file1
+            cp path/to/file2 $REPO/path/to/file2
+            # Add more cp commands for additional files as needed
+            cd $REPO
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add .
+            git commit -m "chore($REPO): synchronize files"
+            git push
+            cd ..
+            rm -rf $REPO
+          done
