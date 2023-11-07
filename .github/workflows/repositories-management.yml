@@ -35,8 +35,8 @@ jobs:
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"
             git add .
-            echo "aaaaa"
             git config --global credential.helper
+            echo "aaaaa"
 
             git diff --staged --quiet || git commit -m "chore($REPO): synchronize files"
             git push || true
