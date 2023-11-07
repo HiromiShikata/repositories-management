@@ -28,6 +28,7 @@ jobs:
             "hashigoya-private"
           )
           for REPO in $REPO_LIST; do
+            echo $REPO
             gh repo clone $ORG_NAME/$REPO
             cp .github/workflows/assign-all-cards-to-owner.yml $REPO/.github/workflows/assign-all-cards-to-owner.yml
             cd $REPO
