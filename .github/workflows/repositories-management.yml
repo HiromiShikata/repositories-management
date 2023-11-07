@@ -32,6 +32,7 @@ jobs:
             ".github/workflows/assign-all-cards-to-owner.yml"
           )
           for REPO in $REPO_LIST; do
+            echo $ORG_NAME/$REPO
             gh repo clone $ORG_NAME/$REPO
             for FILE in "${FILES_TO_SYNC[@]}"; do
               DIRECTORY=$(dirname $FILE)
