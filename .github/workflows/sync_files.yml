@@ -23,13 +23,12 @@ jobs:
           echo '${{ secrets.GH_TOKEN }}' | gh auth login --with-token
 
       - run: |
-          ORG_NAME="your_org"
-          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name -q '.[].name')
+          ORG_NAME="HiromiShikata"
+          # REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name -q '.[].name')
+          REPO_LIST=("template-typescript" "hashigoya-private")
           for REPO in $REPO_LIST; do
             gh repo clone $ORG_NAME/$REPO
-            cp path/to/file1 $REPO/path/to/file1
-            cp path/to/file2 $REPO/path/to/file2
-            # Add more cp commands for additional files as needed
+            cp .github/workflows/assign-all-cards-to-owner.yml $REPO/.github/workflows/assign-all-cards-to-owner.yml
             cd $REPO
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"
