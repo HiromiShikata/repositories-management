@@ -1,4 +1,4 @@
-name: Sync files
+name: Repositories Management
 
 on:
   schedule:
@@ -7,60 +7,36 @@ on:
     branches:
       - main
     paths:
-      - '.github/workflows/repositories-management.yml'
+      - '.github/workflows/**'
+      - 'labels.yaml'
+
+env:
+  ORG_NAME: HiromiShikata
 
 jobs:
   update-repos:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_BOT_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - uses: actions/checkout@v2
       - run: |
           sudo apt-get update
           sudo apt-get install gh
-
       - run: |
-          echo '${{ secrets.GH_TOKEN }}' | gh auth login --with-token
-      - run: |
-          ORG_NAME="HiromiShikata"
-          # REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name -q '.[].name')
-          REPO_LIST=(
-            "template-typescript"
-            "hashigoya-private"
-          )
-          for REPO in $REPO_LIST; do
-            echo $REPO
-            gh repo clone $ORG_NAME/$REPO
-            cp .github/workflows/assign-all-cards-to-owner.yml $REPO/.github/workflows/assign-all-cards-to-owner.yml
-            cd $REPO
-            echo "aaaaa1"
-            git config --local user.email "action@github.com"
-            git config --local user.name "GitHub Action"
-            echo "aaaaa2"
-            git add .
-            echo "aaaaa3"
-            git config --global credential.helper
-            echo "aaaaa4"
-
-            git diff --staged --quiet || git commit -m "chore($REPO): synchronize files"
-            git push || true
-            cd ..
-            rm -rf $REPO
-          done
-      - name: Sync Files
+          echo $GH_BOT_TOKEN | gh auth login --with-token
+      - name: Sync Files to All repositories
         run: |
-          echo "${{ secrets.GH_TOKEN }}" | gh auth login --with-token
-          gh auth status
-          ORG_NAME="HiromiShikata"
-          # REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name -q '.[].name')
-          REPO_LIST=(
-            "template-typescript"
-            "hashigoya-private"
-          )
+          GITHUB_USER=$(curl -s -H "Authorization: token $GH_BOT_TOKEN" https://api.github.com/user | jq -r '.login')
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
           FILES_TO_SYNC=(
-            ".github/workflows/assign-all-cards-to-owner.yml"
+            ".github/workflows/umino-project.yml"
+            ".github/workflows/commit-lint.yml"
+            ".github/workflows/configs/commitlint.config.js"
+            ".github/workflows/create-pr.yml"
           )
           for REPO in $REPO_LIST; do
-            echo $ORG_NAME/$REPO
             gh repo clone $ORG_NAME/$REPO
             for FILE in "${FILES_TO_SYNC[@]}"; do
               DIRECTORY=$(dirname $FILE)
@@ -70,15 +46,28 @@ jobs:
             cd $REPO
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"
+            git diff
             git add .
-            git diff --staged --quiet || git commit -m "chore($REPO): synchronize files"
-            git push || true
+            git diff --staged --quiet && { echo "No changes in $REPO"; cd ..; rm -rf $REPO; continue; }
+            git commit -m "autogen: updated common files in $ORG_NAME" 
+            ACTION_RUN_ID=${{ github.run_id }}
+            ACTION_LINK="https://github.com/${{ github.repository }}/actions/runs/$ACTION_RUN_ID"
+            BRANCH_NAME="update-common-files-$(date +%Y%m%d%H%M%S)"
+            git switch -c $BRANCH_NAME
+            git remote set-url origin https://$GITHUB_USER:$GH_BOT_TOKEN@github.com/$ORG_NAME/$REPO.git
+            git remote -v
+            git remote show origin
+            git push origin $BRANCH_NAME
+            gh pr create --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK"
             cd ..
             rm -rf $REPO
           done
 
   label-sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_BOT_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
     - name: Checkout
       uses: actions/checkout@v2
@@ -87,46 +76,63 @@ jobs:
       run: npm install -g github-label-sync
       
     - name: Sync Labels
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        for repo in $(gh repo list HiromiShikata --limit 100 --json name --jq '.[].name'); do
-          github-label-sync --access-token $GITHUB_TOKEN --labels ./labels.yaml HiromiShikata/$repo
+        for repo in $(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name'); do
+          github-label-sync --allow-added-labels --access-token $GH_BOT_TOKEN --labels ./labels.yaml ${ORG_NAME}/$repo
         done
-
 
   branch_protection:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_BOT_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
-      - name: Apply branch protection
-        uses: actions/github-script@v5
-        with:
-          github-token: ${{ secrets.GH_TOKEN }}
-          script: |
-            const orgName = "HiromiShikata"
-            const repoList = ["template-typescript", "hashigoya-private",]
-            const branch = 'main'
-            const protectionRules = {
-              required_status_checks: {
-                strict: true,
-                contexts: ['test', 'build']
-              },
-              enforce_admins: true,
-              required_pull_request_reviews: {
-                required_approving_review_count: 1
-              },
-              restrictions: null
-            }
+      - name: Update branch protection settings for all repositories
+        run: |
+          ORG_NAME="${{ env.ORG_NAME }}"
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
+          GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
+  
+          for REPO in $REPO_LIST; do
+            curl -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
+                 -H "Accept: application/vnd.github.v3+json" \
+                 "https://api.github.com/repos/$ORG_NAME/$REPO" \
+                 -d '{"delete_branch_on_merge": true}'
+            curl -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
+                 -H "Accept: application/vnd.github.v3+json" \
+                 "https://api.github.com/repos/$ORG_NAME/$REPO" \
+                 -d '{"allow_auto_merge": true}'
 
-            for (const repo of repoList) {
-              github.rest.repos.updateBranchProtection({
-                owner: orgName,
-                repo,
-                branch,
-                ...protectionRules
-              }).then(() => {
-                console.log(`Branch protection applied to ${repo}`);
-              }).catch((error) => {
-                console.error(`Error applying branch protection to ${repo}: ${error}`);
-              });
-            }
+            if [ $? -eq 0 ]; then
+              echo "Auto-merge and branch deletion settings updated for $REPO"
+            else
+              echo "Error updating settings for $REPO"
+            fi
+          done
+      - name: Apply branch protection to strict repositories
+        run: |
+          ORG_NAME="${{ env.ORG_NAME }}"
+          REPO_LIST="${{ env.STRICT_REPO_LIST }}"
+          GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
+  
+          for REPO in $REPO_LIST; do
+            curl -X PUT -H "Authorization: token $GH_BOT_TOKEN" \
+                 -H "Accept: application/vnd.github.v3+json" \
+                 "https://api.github.com/repos/$ORG_NAME/$REPO/branches/main/protection" \
+                 -d '{
+                      "required_status_checks": {
+                        "strict": true,
+                        "contexts": ["test", "build"]
+                      },
+                      "enforce_admins": true,
+                      "required_pull_request_reviews": {
+                        "required_approving_review_count": 1
+                      },
+                      "restrictions": null
+                    }'
+            if [ $? -eq 0 ]; then
+              echo "Branch protection applied to $REPO"
+            else
+              echo "Error applying branch protection to $REPO"
+            fi
+          done
