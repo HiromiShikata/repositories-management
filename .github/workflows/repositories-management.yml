@@ -85,34 +85,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      GH_BOT_TOKEN: ${{ secrets.GH_TOKEN }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - name: Update branch protection settings for all repositories
         run: |
           ORG_NAME="${{ env.ORG_NAME }}"
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
-          GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
-  
-          for REPO in $REPO_LIST; do
-            curl -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
-                 -H "Accept: application/vnd.github.v3+json" \
-                 "https://api.github.com/repos/$ORG_NAME/$REPO" \
-                 -d '{"delete_branch_on_merge": true}'
-            curl -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
-                 -H "Accept: application/vnd.github.v3+json" \
-                 "https://api.github.com/repos/$ORG_NAME/$REPO" \
-                 -d '{"allow_auto_merge": true}'
-
-            if [ $? -eq 0 ]; then
-              echo "Auto-merge and branch deletion settings updated for $REPO"
-            else
-              echo "Error updating settings for $REPO"
-            fi
-          done
-      - name: Apply branch protection to strict repositories
-        run: |
-          ORG_NAME="${{ env.ORG_NAME }}"
-          REPO_LIST="${{ env.STRICT_REPO_LIST }}"
           GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
   
           for REPO in $REPO_LIST; do
@@ -130,9 +108,10 @@ jobs:
                       },
                       "restrictions": null
                     }'
+
             if [ $? -eq 0 ]; then
-              echo "Branch protection applied to $REPO"
+              echo "Auto-merge and branch deletion settings updated for $REPO"
             else
-              echo "Error applying branch protection to $REPO"
+              echo "Error updating settings for $REPO"
             fi
           done
