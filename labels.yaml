@@ -3,38 +3,33 @@
   aliases: []
   description: ""
   delete: false
-- name: discussion
+- name: only share
+  color: "#B60205"
+  aliases: []
+  description: ""
+  delete: false
+- name: hiromishikata:task:pc
   color: "##0E8A16"
   aliases: []
   description: ""
   delete: false
-- name: bug
-  color: "#d73a4a"
+- name: hiromishikata:task:mobile
+  color: "##0E8A16"
   aliases: []
   description: ""
   delete: false
-- name: documentation
-  color: "#0075ca"
+- name: hiromishikata:task:home
+  color: "##0E8A16"
   aliases: []
   description: ""
   delete: false
-- name: enhancement
-  color: "#a2eeef"
+- name: hiromishikata:task:silent
+  color: "##0E8A16"
   aliases: []
   description: ""
   delete: false
-- name: good first issue
-  color: "#7057ff"
-  aliases: []
-  description: ""
-  delete: false
-- name: help wanted
-  color: "#008672"
-  aliases: []
-  description: ""
-  delete: false
-- name: question
-  color: "#d876e3"
+- name: hiromishikata:task:photo
+  color: "##0E8A16"
   aliases: []
   description: ""
   delete: false
