@@ -1,14 +1,15 @@
-name: Issue Assigner
+name: Empty format test
 
 on:
-  issues:
-    types: [opened]
+  push
 
 jobs:
-  auto-assign:
+  format:
     runs-on: ubuntu-latest
     steps:
-      - uses: pozil/auto-assign-issue@v1.12.0
-        with:
-          assignees: HiromiShikata
-          repo-token: ${{ secrets.GH_TOKEN }}
+      - run: echo "format"
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "test"
+
