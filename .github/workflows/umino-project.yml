@@ -44,7 +44,7 @@ jobs:
           status_value: ${{ env.inbox }}
       - name: Comment #offline
         if: github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'hiromishikata:task:offline'
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
