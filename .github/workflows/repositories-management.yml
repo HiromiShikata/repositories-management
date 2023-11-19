@@ -20,7 +20,7 @@ jobs:
     env:
       GH_BOT_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - run: |
           sudo apt-get update
           sudo apt-get install gh
@@ -71,7 +71,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       
     - name: Install GitHub Label Sync
       run: npm install -g github-label-sync
