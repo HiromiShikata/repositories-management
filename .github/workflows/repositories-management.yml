@@ -92,7 +92,7 @@ jobs:
         run: |
           ORG_NAME="${{ env.ORG_NAME }}"
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
-          GH_BOT_TOKEN="${{ secrets.XDELI_BOT_TOKEN }}"
+          GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
   
           for REPO in $REPO_LIST; do
             curl -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
