@@ -9,6 +9,7 @@ on:
     paths:
       - '.github/workflows/**'
       - 'labels.yaml'
+      - 'renovate.json'
 
 env:
   ORG_NAME: HiromiShikata
@@ -37,7 +38,8 @@ jobs:
             ".github/workflows/configs/commitlint.config.js"
             ".github/workflows/create-pr.yml"
             ".github/workflows/empty-format-test-job.yml"
-          )
+            "renovate.json"
+            )
           for REPO in $REPO_LIST; do
             gh repo clone $ORG_NAME/$REPO
             for FILE in "${FILES_TO_SYNC[@]}"; do
