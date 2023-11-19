@@ -35,6 +35,7 @@ jobs:
             ".github/workflows/commit-lint.yml"
             ".github/workflows/configs/commitlint.config.js"
             ".github/workflows/create-pr.yml"
+            ".github/workflows/empty-format-test-job.yml"
           )
           for REPO in $REPO_LIST; do
             gh repo clone $ORG_NAME/$REPO
