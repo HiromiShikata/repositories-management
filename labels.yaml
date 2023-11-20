@@ -9,27 +9,27 @@
   description: ""
   delete: false
 - name: hiromishikata:task:pc
-  color: "##0E8A16"
+  color: "#0E8A16"
   aliases: []
   description: ""
   delete: false
 - name: hiromishikata:task:mobile
-  color: "##0E8A16"
+  color: "#0E8A16"
   aliases: []
   description: ""
   delete: false
 - name: hiromishikata:task:home
-  color: "##0E8A16"
+  color: "#0E8A16"
   aliases: []
   description: ""
   delete: false
 - name: hiromishikata:task:silent
-  color: "##0E8A16"
+  color: "#0E8A16"
   aliases: []
   description: ""
   delete: false
 - name: hiromishikata:task:photo
-  color: "##0E8A16"
+  color: "#0E8A16"
   aliases: []
   description: ""
   delete: false
