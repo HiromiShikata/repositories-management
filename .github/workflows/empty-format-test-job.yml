@@ -1,7 +1,6 @@
 name: Empty format test
 
-on:
-  push
+on: push
 
 jobs:
   test:

@@ -2,14 +2,14 @@ name: Repositories Management
 
 on:
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: "0 0 * * 1"
   push:
     branches:
       - main
     paths:
-      - '.github/workflows/**'
-      - 'labels.yaml'
-      - 'renovate.json'
+      - ".github/workflows/**"
+      - "labels.yaml"
+      - "renovate.json"
 
 env:
   ORG_NAME: HiromiShikata
@@ -73,18 +73,18 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Install GitHub Label Sync
-      run: npm install -g github-label-sync
-      
-    - name: Sync Labels
-      run: |
-        ORG_NAME="${{ env.ORG_NAME }}"
-        for repo in $(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name'); do
-          github-label-sync --allow-added-labels --access-token ${{ env.GH_TOKEN }} --labels ./labels.yaml ${ORG_NAME}/$repo
-        done
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GitHub Label Sync
+        run: npm install -g github-label-sync
+
+      - name: Sync Labels
+        run: |
+          ORG_NAME="${{ env.ORG_NAME }}"
+          for repo in $(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name'); do
+            github-label-sync --allow-added-labels --access-token ${{ env.GH_TOKEN }} --labels ./labels.yaml ${ORG_NAME}/$repo
+          done
 
   repository-config:
     runs-on: ubuntu-latest
@@ -97,7 +97,7 @@ jobs:
           ORG_NAME="${{ env.ORG_NAME }}"
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
           GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
-  
+
           for REPO in $REPO_LIST; do
             curl -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
                  -H "Accept: application/vnd.github.v3+json" \
@@ -120,7 +120,7 @@ jobs:
           ORG_NAME="${{ env.ORG_NAME }}"
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
           GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
-  
+
           for REPO in $REPO_LIST; do
             curl -X PUT -H "Authorization: token $GH_BOT_TOKEN" \
                  -H "Accept: application/vnd.github.v3+json" \
