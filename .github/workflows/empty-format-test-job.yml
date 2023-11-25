@@ -21,6 +21,6 @@ jobs:
           node-version: 20
       - run: git pull
       - run: npx prettier --write "**/*.{md,yaml,yml}" && git --no-pager diff
-      - uses: stefanzweifel/git-auto-commit-action@v4
+      - uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'style: re-format / npx prettier --write "**/*.{md,yaml,yml}"'
