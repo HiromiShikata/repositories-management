@@ -65,6 +65,7 @@ jobs:
             gh pr create --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK"
             cd ..
             rm -rf $REPO
+            sleep 3s
           done
 
   label-sync:
