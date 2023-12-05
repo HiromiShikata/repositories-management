@@ -28,6 +28,11 @@
   aliases: []
   description: ""
   delete: false
+- name: hiromishikata:task:monitoring
+  color: "#0E8A16"
+  aliases: []
+  description: ""
+  delete: false
 - name: hiromishikata:task:photo
   color: "#0E8A16"
   aliases: []
