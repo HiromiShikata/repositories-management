@@ -100,18 +100,21 @@ jobs:
           GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
 
           for REPO in $REPO_LIST; do
-            curl -f -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
-                 -H "Accept: application/vnd.github.v3+json" \
-                 "https://api.github.com/repos/$ORG_NAME/$REPO" \
-                 -d '{
-                       "delete_branch_on_merge": true,
-                       "allow_auto_merge": true,
-                       "merge_commit_allowed": true,
-                       "allow_rebase_merge": false,
-                       "allow_squash_merge": false
-                     }'
-
-            if [ $? -eq 0 ]; then
+            echo "curl -f -X PATCH -H \"Authorization: token $GH_BOT_TOKEN\" -H \"Accept: application/vnd.github.v3+json\" \"https://api.github.com/repos/$ORG_NAME/$REPO\" -d '{ \"delete_branch_on_merge\": true, \"allow_auto_merge\": true, \"merge_commit_allowed\": true, \"allow_rebase_merge\": false, \"allow_squash_merge\": false }'"
+            RESPONSE=$(curl -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
+                            -H "Accept: application/vnd.github.v3+json" \
+                            "https://api.github.com/repos/$ORG_NAME/$REPO" \
+                            -d '{
+                                  "delete_branch_on_merge": true,
+                                  "allow_auto_merge": true,
+                                  "merge_commit_allowed": true,
+                                  "allow_rebase_merge": false,
+                                  "allow_squash_merge": false
+                                }' -w "\n%{http_code}" -s)
+            echo "$RESPONSE"
+            HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+            echo "$HTTP_STATUS"
+            if [ "$HTTP_STATUS" -eq 200 ]; then
               echo "Auto-merge and branch deletion settings updated for $REPO"
             else
               echo "Error updating settings for $REPO"
@@ -124,24 +127,26 @@ jobs:
           GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
 
           for REPO in $REPO_LIST; do
-            curl -X PUT -H "Authorization: token $GH_BOT_TOKEN" \
-                 -H "Accept: application/vnd.github.v3+json" \
-                 "https://api.github.com/repos/$ORG_NAME/$REPO/branches/main/protection" \
-                 -d '{
-                      "required_status_checks": {
-                        "strict": true,
-                        "contexts": ["test", "format", "commit-lint", "check-dontmerge"]
-                      },
-                      "enforce_admins": true,
-                      "required_pull_request_reviews": {
-                        "required_approving_review_count": 0
-                      },
-                      "restrictions": null,
-                      "required_linear_history": false,
-                      "required_conversation_resolution": true
-                    }'
-
-            if [ $? -eq 0 ]; then
+            echo "curl -X PUT -H \"Authorization: token $GH_BOT_TOKEN\" -H \"Accept: application/vnd.github.v3+json\" \"https://api.github.com/repos/$ORG_NAME/$REPO/branches/main/protection\" -d '{ \"required_status_checks\": { \"strict\": true, \"contexts\": [\"test\", \"format\", \"commit-lint\", \"check-dontmerge\"] }, \"enforce_admins\": true, \"required_pull_request_reviews\": { \"required_approving_review_count\": 0 }, \"restrictions\": null, \"required_linear_history\": false, \"required_conversation_resolution\": true }'"
+            RESPONSE=$(curl -X PUT -H "Authorization: token $GH_BOT_TOKEN" \
+                            -H "Accept: application/vnd.github.v3+json" \
+                            "https://api.github.com/repos/$ORG_NAME/$REPO/branches/main/protection" \
+                            -d '{
+                                  "required_status_checks": {
+                                    "strict": true,
+                                    "contexts": ["test", "format", "commit-lint", "check-dontmerge"]
+                                  },
+                                  "enforce_admins": true,
+                                  "required_pull_request_reviews": {
+                                    "required_approving_review_count": 0
+                                  },
+                                  "restrictions": null,
+                                  "required_linear_history": false,
+                                  "required_conversation_resolution": true
+                                }' -w "\n%{http_code}" -s)
+            HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+            echo "$RESPONSE"
+            if [ "$HTTP_STATUS" -eq 200 ]; then
               echo "Auto-merge and branch deletion settings updated for $REPO"
             else
               echo "Error updating settings for $REPO"
