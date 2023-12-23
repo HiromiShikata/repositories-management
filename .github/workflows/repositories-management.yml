@@ -100,13 +100,13 @@ jobs:
           GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
 
           for REPO in $REPO_LIST; do
-            curl -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
+            curl -f -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
                  -H "Accept: application/vnd.github.v3+json" \
                  "https://api.github.com/repos/$ORG_NAME/$REPO" \
                  -d '{
                        "delete_branch_on_merge": true,
                        "allow_auto_merge": true,
-                       "allow_merge_commits": true,
+                       "merge_commit_allowed": true,
                        "allow_rebase_merge": false,
                        "allow_squash_merge": false
                      }'
