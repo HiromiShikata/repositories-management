@@ -106,6 +106,7 @@ jobs:
                  -d '{
                        "delete_branch_on_merge": true,
                        "allow_auto_merge": true,
+                       "allow_merge_commits": true,
                        "allow_rebase_merge": false,
                        "allow_squash_merge": false
                      }'
