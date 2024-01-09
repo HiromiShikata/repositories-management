@@ -143,6 +143,8 @@ jobs:
                                   },
                                   "restrictions": null,
                                   "required_linear_history": false,
+                                  "allow_force_pushes": false,
+                                  "allow_deletions": false,
                                   "required_conversation_resolution": true
                                 }' -w "\n%{http_code}" -s)
             HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
