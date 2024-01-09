@@ -65,7 +65,7 @@ jobs:
             gh pr create --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK"
             cd ..
             rm -rf $REPO
-            sleep 3s
+            sleep 10s
           done
 
   label-sync:
@@ -134,7 +134,7 @@ jobs:
                             -d '{
                                   "required_status_checks": {
                                     "strict": true,
-                                    "contexts": ["test", "format", "commit-lint", "check-dontmerge"]
+                                    "contexts": ["test", "format", "commit-lint", "check-dontmerge", "create_and_enable_automerge"]
                                   },
                                   "enforce_admins": true,
                                   "required_pull_request_reviews": {
