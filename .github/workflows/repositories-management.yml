@@ -10,6 +10,7 @@ on:
       - ".github/workflows/**"
       - "labels.yaml"
       - "renovate.json"
+  workflow_dispatch:
 
 env:
   ORG_NAME: HiromiShikata
