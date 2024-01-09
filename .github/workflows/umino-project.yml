@@ -25,7 +25,6 @@ env:
   project_v2_id: PVT_kwHOAGJHa84AFWnr
   field_id: PVTF_lAHOAGJHa84AFWnrzgIk_H0
 
-
 jobs:
   umino-job:
     name: opened_or_reopened
@@ -59,8 +58,6 @@ jobs:
             };
             github.issues.createComment(issueComment);
 
-
-
       - run: |
           OWNER=$(echo ${{ github.repository }} | cut -d '/' -f 1)
           REPO=$(echo ${{ github.repository }} | cut -d '/' -f 2)
@@ -69,7 +66,7 @@ jobs:
 
           QUERY_DATA='{ "query": "query { repository(owner: \"'$OWNER'\", name: \"'$REPO'\") { '${ENTITY_TYPE}'(number: '$NUMBER') { projectItems(first: 10) { nodes { id } } } } }" }'
           RESPONSE=$(curl -X POST -H "Authorization: bearer ${{ secrets.GH_TOKEN }}" -H "Content-Type: application/json" --data "$QUERY_DATA" https://api.github.com/graphql)
-          
+
           if echo $RESPONSE | grep -q "errors"; then
             echo "Error in GraphQL query"
             echo "GraphQL Response: $RESPONSE"
