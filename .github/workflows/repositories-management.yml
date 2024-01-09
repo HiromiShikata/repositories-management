@@ -31,7 +31,7 @@ jobs:
         run: |
           ORG_NAME="${{ env.ORG_NAME }}"
           GITHUB_USER=$(curl -s -H "Authorization: token $GH_BOT_TOKEN" https://api.github.com/user | jq -r '.login')
-          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isFork | jq -r '.[] | select(.isArchived == false and .isFork == false) | .name')
           FILES_TO_SYNC=(
             ".github/workflows/umino-project.yml"
             ".github/workflows/commit-lint.yml"
