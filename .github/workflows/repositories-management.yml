@@ -134,7 +134,7 @@ jobs:
                             -d '{
                                   "required_status_checks": {
                                     "strict": true,
-                                    "contexts": ["test", "format", "commit-lint", "check-dontmerge"]
+                                    "contexts": ["test", "format", "commit-lint", "check-dontmerge", "create_and_enable_automerge"]
                                   },
                                   "enforce_admins": true,
                                   "required_pull_request_reviews": {
