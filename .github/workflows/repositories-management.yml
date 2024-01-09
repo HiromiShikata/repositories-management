@@ -41,6 +41,7 @@ jobs:
             "renovate.json"
             )
           for REPO in $REPO_LIST; do
+            echo "REPO: $REPO"
             gh repo clone $ORG_NAME/$REPO
             for FILE in "${FILES_TO_SYNC[@]}"; do
               DIRECTORY=$(dirname $FILE)
