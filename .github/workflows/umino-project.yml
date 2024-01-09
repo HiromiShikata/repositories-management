@@ -73,7 +73,11 @@ jobs:
             exit 1
           fi
 
-          ITEM_ID=$(echo $RESPONSE | jq -r '.data.repository.issue.projectItems.nodes[0].id')
+          if [ "$ENTITY_TYPE" = "pullRequest" ]; then
+            ITEM_ID=$(echo $RESPONSE | jq -r '.data.repository.pullRequest.projectItems.nodes[0].id')
+          else
+            ITEM_ID=$(echo $RESPONSE | jq -r '.data.repository.issue.projectItems.nodes[0].id')
+          fi
 
           if [ "$ITEM_ID" = "null" ] || [ -z "$ITEM_ID" ]; then
             echo "No valid item ID found, cannot proceed"
