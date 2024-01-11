@@ -87,6 +87,7 @@ jobs:
           ORG_NAME="${{ env.ORG_NAME }}"
           for repo in $(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name'); do
             github-label-sync --allow-added-labels --access-token ${{ env.GH_TOKEN }} --labels ./labels.yaml ${ORG_NAME}/$repo
+            sleep 30s
           done
 
   repository-config:
@@ -121,6 +122,7 @@ jobs:
             else
               echo "Error updating settings for $REPO"
             fi
+            sleep 30s
           done
       - name: Update branch protection settings for all repositories
         run: |
@@ -155,4 +157,5 @@ jobs:
             else
               echo "Error updating settings for $REPO"
             fi
+            sleep 30s
           done
