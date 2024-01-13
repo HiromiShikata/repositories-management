@@ -1,0 +1,38 @@
+name: Repositories Management / hourly
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/**'
+      - 'labels.yaml'
+      - 'renovate.json'
+  workflow_dispatch:
+
+env:
+  ORG_NAME: HiromiShikata
+
+jobs:
+  rebase-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebase and Update Open PRs
+        run: |
+          ORG_NAME="${{ env.ORG_NAME }}"
+          GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
+          echo $GH_BOT_TOKEN | gh auth login --with-token
+
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
+
+          for REPO in $REPO_LIST; do
+            PULLS=$(gh pr list -R $ORG_NAME/$REPO --json number,state,isDraft --jq '.[] | select(.state == "OPEN" and .isDraft == false) | .number')
+            for PR in $PULLS; do
+              gh pr checkout $PR -R $ORG_NAME/$REPO
+              git rebase origin/main
+              git push --force-with-lease
+            done
+          done
