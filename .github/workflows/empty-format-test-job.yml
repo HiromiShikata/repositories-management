@@ -21,8 +21,8 @@ jobs:
           node-version: 20
       - run: git pull
       - run: |
-          npx prettier --write "**/*.{md,yaml,yml}" --trailing-comma all --print-width 80 --single-quote true
+          npx prettier --write "**/*.{md,yaml,yml,js}" --trailing-comma all --print-width 80 --single-quote true
           git --no-pager diff
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: 'style: re-format / npx prettier --write "**/*.{md,yaml,yml}"'
+          commit_message: 'style: re-format / npx prettier --write "**/*.{md,yaml,yml,js}"'
