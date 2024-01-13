@@ -32,6 +32,7 @@ jobs:
             PULLS=$(gh pr list -R $ORG_NAME/$REPO --json number,state,isDraft --jq '.[] | select(.state == "OPEN" and .isDraft == false) | .number')
             for PR in $PULLS; do
               gh pr checkout $PR -R $ORG_NAME/$REPO
+              gh repo fetch
               git rebase origin/main
               git push --force-with-lease
             done
