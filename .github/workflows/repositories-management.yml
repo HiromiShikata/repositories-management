@@ -43,6 +43,16 @@ jobs:
           for REPO in $REPO_LIST; do
             echo "REPO: $REPO"
             gh repo clone $ORG_NAME/$REPO
+
+            cd $REPO
+            PR_LIST=$(gh pr list --state open --json number,title -q ".[] | select(.title == \"Updated common files in HiromiShikata\").number")
+            echo "PR_LIST: ${PR_LIST}"
+            for PR_NUMBER in $PR_LIST; do
+              echo "PR_NUMBER: ${PR_NUMBER}"
+              gh pr close $PR_NUMBER
+            done
+            cd ../
+
             for FILE in "${FILES_TO_SYNC[@]}"; do
               DIRECTORY=$(dirname $FILE)
               mkdir -p $REPO/$DIRECTORY
