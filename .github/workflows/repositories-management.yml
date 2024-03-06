@@ -168,7 +168,8 @@ jobs:
                                   },
                                   "enforce_admins": true,
                                   "required_pull_request_reviews": {
-                                    "required_approving_review_count": 0
+                                    "required_approving_review_count": 0,
+                                    "require_code_owner_reviews": true
                                   },
                                   "restrictions": null,
                                   "required_linear_history": false,
