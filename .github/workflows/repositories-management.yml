@@ -1,5 +1,9 @@
 name: Repositories Management
 
+concurrency:
+  group: repositories-management-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   schedule:
     - cron: '0 15 * * *'
