@@ -18,6 +18,7 @@ on:
 
 env:
   ORG_NAME: HiromiShikata
+  TEAM_REPOS: "7sea.world, blog-tech, media-pinpoint-research, blog-digital-nomad-minor-cosmetic-surgery, umino-corporait-operation, instagram-14LBaggageTraveler, study-of-body"
 
 jobs:
   update-repos:
@@ -69,6 +70,13 @@ jobs:
               mkdir -p $REPO/$DIRECTORY
               cp $FILE $REPO/$FILE
             done
+            if [[ " ${TEAM_REPOS[*]} " =~ " ${REPO} " ]]; then
+              echo "team repository: $REPO"
+            else
+              echo "non-team repository: $REPO"
+              FILE=".github/workflows/assign-all-cards-to-owner.yml"
+              cp $FILE $REPO/$FILE
+            fi
             cd $REPO
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"
