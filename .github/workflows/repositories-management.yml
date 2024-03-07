@@ -70,8 +70,11 @@ jobs:
               mkdir -p $REPO/$DIRECTORY
               cp $FILE $REPO/$FILE
             done
-            if [[ " ${TEAM_REPOS[*]} " =~ " ${REPO} " ]]; then
+
+            if echo "$TEAM_REPOS" | grep -qw "${REPO}"; then
               echo "team repository: $REPO"
+              FILE=".github/workflows/assign-all-cards-to-owner.yml"
+              rm $REPO/$FILE
             else
               echo "non-team repository: $REPO"
               FILE=".github/workflows/assign-all-cards-to-owner.yml"
