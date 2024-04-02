@@ -43,3 +43,33 @@
   aliases: []
   description: ''
   delete: false
+- name: hiromishikata:whyme:assistant
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: hiromishikata:whyme:body-condition
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: hiromishikata:whyme:development
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: hiromishikata:whyme:need-personal-relationship
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: hiromishikata:whyme:personal-gaccount
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: hiromishikata:whyme:workflow-improvement
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
