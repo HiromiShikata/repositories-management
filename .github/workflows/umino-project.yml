@@ -17,7 +17,7 @@ on:
       - labeled
 
 env:
-  inbox: Inbox
+  unread: Unread
   in_progress: In Progress
   gh_project_token: ${{ secrets.GH_TOKEN }}
   user: HiromiShikata
@@ -36,14 +36,14 @@ jobs:
       github.event.action == 'assigned' || github.event.action == 'unassigned' ||
       (github.event.action == 'labeled' && github.event.label.name == 'hiromishikata:task:offline'))
     steps:
-      - name: Move issue to ${{ env.inbox }}
+      - name: Move issue to ${{ env.unread }}
         uses: leonsteinhaeuser/project-beta-automations@v2.2.1
         with:
           gh_token: ${{ env.gh_project_token }}
           user: ${{ env.user }}
           project_id: ${{ env.project_id }}
           resource_node_id: ${{ github.event.pull_request.node_id || github.event.issue.node_id }}
-          status_value: ${{ env.inbox }}
+          status_value: ${{ env.unread }}
       - name: Comment #offline
         if: github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'hiromishikata:task:offline'
         uses: actions/github-script@v7
