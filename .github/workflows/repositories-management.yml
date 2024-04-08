@@ -18,7 +18,7 @@ on:
 
 env:
   ORG_NAME: HiromiShikata
-  TEAM_REPOS: '7sea.world, blog-tech, media-pinpoint-research, blog-digital-nomad-minor-cosmetic-surgery, umino-corporait-operation, instagram-14LBaggageTraveler, study-of-body, hashigoya-project'
+  TEAM_REPOS: '7sea.world, blog-tech, media-pinpoint-research, instagram-beauty-aesthetics-review, umino-corporait-operation, instagram-14LBaggageTraveler, study-of-body, hashigoya-project'
 
 jobs:
   update-repos:
