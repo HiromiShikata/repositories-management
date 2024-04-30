@@ -50,3 +50,4 @@ jobs:
         id: check-linked-issues
         with:
           exclude-branches: 'release/**, dependabot/**, project-common/**'
+          loose-matching: true
