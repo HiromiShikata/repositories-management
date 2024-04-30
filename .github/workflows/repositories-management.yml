@@ -57,7 +57,7 @@ jobs:
               echo "PR_NUMBER: ${PR_NUMBER}"
               gh pr close $PR_NUMBER
             done
-            prefix="update-common-files-"
+            prefix="project-common/update-common-files-"
 
             gh api repos/:owner/:repo/branches | jq -r --arg prefix "$prefix" '.[] | select(.name | startswith($prefix)) | .name' | while read branch_name; do
               echo "Deleting branch: $branch_name"
@@ -89,7 +89,7 @@ jobs:
             git commit -m "autogen: updated common files in $ORG_NAME" 
             ACTION_RUN_ID=${{ github.run_id }}
             ACTION_LINK="https://github.com/${{ github.repository }}/actions/runs/$ACTION_RUN_ID"
-            BRANCH_NAME="update-common-files-$(date +%Y%m%d%H%M%S)"
+            BRANCH_NAME="project-common/update-common-files-$(date +%Y%m%d%H%M%S)"
             git switch -c $BRANCH_NAME
             git remote set-url origin https://$GITHUB_USER:$GH_BOT_TOKEN@github.com/$ORG_NAME/$REPO.git
             git remote -v
