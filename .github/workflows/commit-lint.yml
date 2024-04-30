@@ -1,5 +1,11 @@
 name: Lint Commit Messages
-on: push
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
 
 concurrency:
   group: commitlint-${{ github.ref }}
@@ -8,6 +14,10 @@ concurrency:
 jobs:
   commit-lint:
     runs-on: ubuntu-latest
+    permissions:
+      issues: read
+      pull-requests: write
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,12 +35,6 @@ jobs:
         run: |
           npx commitlint --from=origin/main --to=HEAD --config ./.github/workflows/configs/commitlint.config.js
 
-  check-dontmerge:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Check for DONTMERGE
         run: |
           result=$(find . \
@@ -42,3 +46,8 @@ jobs:
             echo "$result"
             exit 1
           fi
+      - uses: nearform-actions/github-action-check-linked-issues@v1
+        id: check-linked-issues
+        with:
+          exclude-branches: 'release/**, dependabot/**, project-common/**'
+          loose-matching: true
