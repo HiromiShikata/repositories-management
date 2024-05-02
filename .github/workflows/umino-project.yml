@@ -15,6 +15,9 @@ on:
       - assigned
       - unassigned
       - labeled
+  issue_comment:
+    types:
+      - created
 
 env:
   unread: Unread
@@ -96,3 +99,38 @@ jobs:
             echo "Clear Field Response: $CLEAR_RESPONSE"
             exit 1
           fi
+
+      - name: Create Issue
+        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && startsWith(github.event.comment.body, '/createissue') }}
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const issueTitle = context.payload.comment.body.slice(12).split('\n')[0].trim();
+            const issueNumber = context.issue.number;
+            const commentId = context.payload.comment.id;
+            const commentLink = `https://github.com/${context.repo.owner}/${context.repo.repo}/issues/${issueNumber}#issuecomment-${commentId}`;
+            const issueBody = `
+              ${context.payload.comment.body.slice(12).trim()}
+
+              
+              Created from a comment: ${commentLink}
+            `;
+            const newIssue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: issueTitle,
+              body: issueBody
+            });
+      - name: Close Issue
+        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && (contains(github.event.comment.body, '/close') || contains(github.event.comment.body, '/done')) }}
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed'
+            });
