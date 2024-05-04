@@ -38,6 +38,11 @@
   aliases: []
   description: ''
   delete: false
+- name: hiromishikata:task:researching
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
 - name: hiromishikata:task:development
   color: '#0E8A16'
   aliases: []
