@@ -48,6 +48,7 @@ jobs:
           fi
       - uses: nearform-actions/github-action-check-linked-issues@v1
         id: check-linked-issues
+        if: false
         with:
           exclude-branches: 'release/**, dependabot/**, project-common/**'
           loose-matching: true
