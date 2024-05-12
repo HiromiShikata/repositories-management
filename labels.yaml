@@ -48,6 +48,11 @@
   aliases: []
   description: ''
   delete: false
+- name: hiromishikata:task:offline
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
 - name: hiromishikata:whyme:assistant
   color: '#0E8A16'
   aliases: []
