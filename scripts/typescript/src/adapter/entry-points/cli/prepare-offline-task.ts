@@ -36,9 +36,9 @@ const run = async () => {
     }
     const descriptionForOfflineControl = `
 ### Comment Command
-/createissue
-/movenextactiondateto YYYYMMDD
-/close
+createissue
+movenextactiondateto YYYYMMDD
+close
 `
     if (assignees.includes('masaori')) {
       console.log(`#offline-masaori: ${issue.url}, title: ${title}`);
