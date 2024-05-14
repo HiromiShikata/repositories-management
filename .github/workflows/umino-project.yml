@@ -85,27 +85,27 @@ jobs:
             exit 1
           fi
         if: >-
-          (github.event_name == 'issues' && github.event.issue.state == 'open') || 
-          (github.event_name == 'pull_request' && github.event.pull_request.state == 'open') &&
-          (github.event.action == 'opened' || github.event.action == 'reopened' || 
+          ((github.event_name == 'issues' && github.event.issue.state == 'open') ||
+          (github.event_name == 'pull_request' && github.event.pull_request.state == 'open')) &&
+          (github.event.action == 'opened' || github.event.action == 'reopened' ||
           github.event.action == 'assigned' || github.event.action == 'unassigned')
 
       - name: Create Issue
-        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && startsWith(github.event.comment.body, '/createissue') }}
+        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && contains(github.event.comment.body, '/createissue') }}
         uses: actions/github-script@v7
         with:
           github-token: ${{secrets.GH_TOKEN}}
           script: |
-            const issueTitle = context.payload.comment.body.slice(12).split('\n')[0].trim();
+            const commentBody = context.payload.comment.body;
+            const createIssueIndex = commentBody.indexOf('/createissue');
+            const issueTitle = commentBody.slice(createIssueIndex + 12).split('\n')[0].trim();
             const issueNumber = context.issue.number;
             const commentId = context.payload.comment.id;
             const commentLink = `https://github.com/${context.repo.owner}/${context.repo.repo}/issues/${issueNumber}#issuecomment-${commentId}`;
             const issueBody = `
-              ${context.payload.comment.body.slice(12).trim()}
-
-              
-              Created from a comment: ${commentLink}
-            `;
+            ${commentBody.slice(createIssueIndex + 12).trim()}
+            Created from a comment: ${commentLink}
+            `;      
             const newIssue = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -125,7 +125,7 @@ jobs:
               state: 'closed'
             });
       - name: Update Date Field
-        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && startsWith(github.event.comment.body, '/movenextactiondateto') }}
+        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && contains(github.event.comment.body, '/movenextactiondateto') }}
         run: |
           DATE_STRING=$(echo "${{ github.event.comment.body }}" | grep -oP '(?<=/movenextactiondateto )\d{8}')
           OWNER=$(echo ${{ github.repository }} | cut -d '/' -f 1)
