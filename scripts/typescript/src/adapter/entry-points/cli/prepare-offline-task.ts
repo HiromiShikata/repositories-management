@@ -38,6 +38,7 @@ const run = async () => {
 ### Comment Command
 createissue
 movenextactiondateto YYYYMMDD
+changeassignee accountName
 close
 `
     if (assignees.includes('masaori')) {
