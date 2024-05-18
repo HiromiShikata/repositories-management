@@ -29,9 +29,11 @@ const run = async () => {
       new Date(nextActionDate).getTime() > now.getTime()
     ) {
       continue;
-    } else if (labels.includes('hiromishikata:task:development')) {
-      continue;
-    } else if (labels.includes('hiromishikata:task:pc')) {
+    } else if (
+      labels.includes('hiromishikata:task:development') ||
+      labels.includes('hiromishikata:task:pc') ||
+      labels.includes('hiromishikata:task:researching')
+    ) {
       continue;
     }
     const descriptionForOfflineControl = `
