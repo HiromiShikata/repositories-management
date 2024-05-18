@@ -29,9 +29,11 @@ const run = async () => {
       new Date(nextActionDate).getTime() > now.getTime()
     ) {
       continue;
-    } else if (labels.includes('hiromishikata:task:development')) {
-      continue;
-    } else if (labels.includes('hiromishikata:task:pc')) {
+    } else if (
+      labels.includes('hiromishikata:task:development') ||
+      labels.includes('hiromishikata:task:pc') ||
+      labels.includes('hiromishikata:task:researching')
+    ) {
       continue;
     }
     const descriptionForOfflineControl = `
@@ -40,19 +42,25 @@ createissue
 movenextactiondateto YYYYMMDD
 changeassignee accountName
 close
-`
+`;
     if (assignees.includes('masaori')) {
       console.log(`#offline-masaori: ${issue.url}, title: ${title}`);
-      await restIssueRepository.createComment(issue.url, `#offline-masaori
+      await restIssueRepository.createComment(
+        issue.url,
+        `#offline-masaori
 
 ${descriptionForOfflineControl}
-`);
+`,
+      );
     } else if (assignees.includes('HiromiShikata')) {
       console.log(`#offline: ${issue.url}, title: ${title}`);
-      await restIssueRepository.createComment(issue.url, `#offline
+      await restIssueRepository.createComment(
+        issue.url,
+        `#offline
 
 ${descriptionForOfflineControl}
-`);
+`,
+      );
     }
   }
 };
