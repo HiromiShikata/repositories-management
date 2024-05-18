@@ -42,19 +42,25 @@ createissue
 movenextactiondateto YYYYMMDD
 changeassignee accountName
 close
-`
+`;
     if (assignees.includes('masaori')) {
       console.log(`#offline-masaori: ${issue.url}, title: ${title}`);
-      await restIssueRepository.createComment(issue.url, `#offline-masaori
+      await restIssueRepository.createComment(
+        issue.url,
+        `#offline-masaori
 
 ${descriptionForOfflineControl}
-`);
+`,
+      );
     } else if (assignees.includes('HiromiShikata')) {
       console.log(`#offline: ${issue.url}, title: ${title}`);
-      await restIssueRepository.createComment(issue.url, `#offline
+      await restIssueRepository.createComment(
+        issue.url,
+        `#offline
 
 ${descriptionForOfflineControl}
-`);
+`,
+      );
     }
   }
 };
