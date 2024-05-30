@@ -8,6 +8,11 @@
   aliases: []
   description: ''
   delete: false
+- name: Low priority
+  color: '#B60205'
+  aliases: []
+  description: ''
+  delete: false
 - name: hiromishikata:task:pc
   color: '#0E8A16'
   aliases: []
@@ -49,6 +54,11 @@
   description: ''
   delete: false
 - name: hiromishikata:task:offline
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: hiromishikata:task:online
   color: '#0E8A16'
   aliases: []
   description: ''
