@@ -39,7 +39,7 @@
   "homepage": "https://github.com/HiromiShikata/template-typescript#readme",
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
-    "@semantic-release/commit-analyzer": "^12.0.0",
+    "@semantic-release/commit-analyzer": "^13.0.0",
     "@semantic-release/git": "^10.0.1",
     "@types/jest": "^29.5.2",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
@@ -55,7 +55,7 @@
     "jest-html-reporter": "^3.10.1",
     "jest-junit": "^16.0.0",
     "prettier": "^3.0.0",
-    "semantic-release": "^23.0.0",
+    "semantic-release": "^24.0.0",
     "ts-jest": "^29.1.1",
     "typescript": "^5.1.6"
   },
