@@ -20,6 +20,10 @@
     {
       "matchPackageNames": ["eslint"],
       "allowedVersions": "<9.0.0"
+    },
+    {
+      "matchPackageNames": ["eslint-plugin-unused-imports"],
+      "allowedVersions": "<4.0.0"
     }
   ]
 }
