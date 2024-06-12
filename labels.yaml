@@ -9,7 +9,17 @@
   description: ''
   delete: false
 - name: Low priority
-  color: '#B60205'
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: epic
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: story
+  color: '#0E8A16'
   aliases: []
   description: ''
   delete: false
