@@ -110,7 +110,8 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: issueTitle,
-              body: issueBody
+              body: issueBody,
+              assignees: ['HiromiShikata']
             });
       - name: Close Issue
         if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && (contains(github.event.comment.body, '/close') || contains(github.event.comment.body, '/done')) }}
