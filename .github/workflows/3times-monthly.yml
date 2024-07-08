@@ -1,0 +1,19 @@
+name: 3 times monthly
+
+on:
+  schedule:
+    - cron: '0 0 5,15,25 * *'
+  workflow_dispatch:
+
+jobs:
+  spread-sheet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v4
+      - run: |
+          cd scripts/typescript
+          npm i 
+          node src/adapter/entry-points/cli/three-times-monthly.ts
+      - env:
+          THREE_TIMES_MONTHLY_CONFIG: ${{ secrets.THREE_TIMES_MONTHLY_CONFIG }}
