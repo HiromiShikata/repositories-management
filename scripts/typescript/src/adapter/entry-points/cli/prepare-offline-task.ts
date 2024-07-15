@@ -33,6 +33,7 @@ const run = async () => {
     } else if (
       labels.includes('hiromishikata:task:development') ||
       labels.includes('hiromishikata:task:pc') ||
+      labels.includes('hiromishikata:task:online') ||
       labels.includes('hiromishikata:task:researching')
     ) {
       continue;
