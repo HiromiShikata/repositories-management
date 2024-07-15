@@ -1,0 +1,122 @@
+[
+  {
+    "name": "_octo",
+    "value": "GH1.1.1528631150.1720622706",
+    "domain": ".github.com",
+    "path": "/",
+    "expires": 1752158706.682985,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_device_id",
+    "value": "925e0a8d9543a71203c3903502ec07ee",
+    "domain": "github.com",
+    "path": "/",
+    "expires": 1752203222.725189,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "saved_user_sessions",
+    "value": "6440811%3AvEgSkB5_d5ieqym7_EGFFC3kd-p37bwp66FGmn0A1h6uhudC",
+    "domain": "github.com",
+    "path": "/",
+    "expires": 1728443378.987721,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "user_session",
+    "value": "vEgSkB5_d5ieqym7_EGFFC3kd-p37bwp66FGmn0A1h6uhudC",
+    "domain": "github.com",
+    "path": "/",
+    "expires": 1722159600.130693,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "__Host-user_session_same_site",
+    "value": "vEgSkB5_d5ieqym7_EGFFC3kd-p37bwp66FGmn0A1h6uhudC",
+    "domain": "github.com",
+    "path": "/",
+    "expires": 1722159600.130832,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Strict"
+  },
+  {
+    "name": "logged_in",
+    "value": "yes",
+    "domain": ".github.com",
+    "path": "/",
+    "expires": 1752203378.988245,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "dotcom_user",
+    "value": "HiromiShikata",
+    "domain": ".github.com",
+    "path": "/",
+    "expires": 1752203378.988334,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "color_mode",
+    "value": "%7B%22color_mode%22%3A%22dark%22%2C%22light_theme%22%3A%7B%22name%22%3A%22light%22%2C%22color_mode%22%3A%22light%22%7D%2C%22dark_theme%22%3A%7B%22name%22%3A%22dark%22%2C%22color_mode%22%3A%22dark%22%7D%7D",
+    "domain": ".github.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "preferred_color_mode",
+    "value": "light",
+    "domain": ".github.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "tz",
+    "value": "UTC",
+    "domain": ".github.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_gh_sess",
+    "value": "MIraDS9XBZkmAZuLRGQbuIIL%2F%2BiB3lx3kbr6cNFlOuej0zJ43zEFABOB1ilBk95JsUd%2BNOYstPa0Dgp2suDxpcGC20KgK5CnasA8LNldj8UKFCY0wMXS%2BAaFrL886Zk4Km9QZ4sLxdGPf6Z2J6d7ilS9%2Bw7oF5SVl2XEb5GphCEBmpHsCL9MuKimam8971%2B5jATainRpkfAvGuhCowaowGhmTOLvvnju9hXUdMq9nkSk40OV%2BLW3kWr3CVyOS%2Bi2rNUmk09VKnpUwbRDOZ9CjYzKV6DY4b8S44N2xQu11TSvka3QqgnPYgLOD6mBo1IeuZCudNwAefXklk48--MCJ1kk2dcwW1VikC--7v0KcsHmORe0nd7S5v7AvA%3D%3D",
+    "domain": "github.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_dd_s",
+    "value": "rum=0&expire=1721019021433",
+    "domain": "github.com",
+    "path": "/",
+    "expires": 1721019029,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Strict"
+  }
+]
