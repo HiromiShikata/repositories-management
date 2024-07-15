@@ -165,7 +165,6 @@ jobs:
               assignees: [assigneeName]
             });
 
-
   check_pull_requests_to_link_issues:
     runs-on: ubuntu-latest
     name: Check linked issues in pull requests
@@ -175,7 +174,7 @@ jobs:
       - uses: nearform-actions/github-action-check-linked-issues@v1
         id: check-linked-issues
         with:
-          exclude-branches: "release/**, dependabot/**, project-common/**"
+          exclude-branches: 'release/**, dependabot/**, project-common/**'
           github-token: ${{ secrets.GH_TOKEN }}
           loose-matching: true
       - name: Get the output
