@@ -15,9 +15,7 @@ const config = {
       },
     ],
   },
-  transformIgnorePatterns: [
-    '/node_modules/(?!(@octokit)/)',
-  ],
+  transformIgnorePatterns: ['/node_modules/(?!(@octokit)/)'],
   moduleFileExtensions: [...defaults.moduleFileExtensions, 'mts', 'cts'],
   testEnvironment: 'node',
   testMatch: ['**/*.test.ts'],
