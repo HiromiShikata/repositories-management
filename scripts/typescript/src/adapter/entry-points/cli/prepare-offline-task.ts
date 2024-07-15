@@ -22,7 +22,8 @@ const run = async () => {
     const nextActionDate =
       projectFields.find((field) => field.fieldName === 'nextactiondate')
         ?.fieldValue || null;
-    if (status.endsWith('Done')) {
+    if (status.endsWith('Done')
+        || status.endsWith('Icebox')) {
       continue;
     } else if (
       nextActionDate &&
@@ -44,7 +45,6 @@ changeassignee accountName
 close
 `;
     if (assignees.includes('masaori')) {
-      console.log(`#offline-masaori: ${issue.url}, title: ${title}`);
       await restIssueRepository.createComment(
         issue.url,
         `#offline-masaori
@@ -53,7 +53,6 @@ ${descriptionForOfflineControl}
 `,
       );
     } else if (assignees.includes('HiromiShikata')) {
-      console.log(`#offline: ${issue.url}, title: ${title}`);
       await restIssueRepository.createComment(
         issue.url,
         `#offline
