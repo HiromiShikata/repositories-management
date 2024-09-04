@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: mkdir -p tmp && echo '${{ secrets.GH_COOKIE }}' > ./tmp/github.com.cookies.json
+      - run: mkdir -p tmp && npx -y gh-cookie '${{ secrets.GH_ACCOUNT_NAME }}' '${{ secrets.GH_PASSWORD }}' '${{ secrets.GH_AUKEY }}' > ./tmp/github.com.cookies.json
       - run: npm run run:prepare-offline-task
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
