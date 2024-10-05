@@ -1,0 +1,34 @@
+name: Test
+
+on:
+  push:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    working-directory: ./scripts/typescript
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: mkdir -p tmp && echo '${{ secrets.TEST_BOT_COOKIE }}' > ./tmp/test.github.com.cookies.json
+      - run: npm run test
+        env:
+          TEST_BOT_GH_TOKEN: ${{ secrets.TEST_BOT_GH_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jest-junit-report
+          path: reports/jest-junit
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: reports
