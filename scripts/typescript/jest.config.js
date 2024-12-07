@@ -1,19 +1,25 @@
-module.exports = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
-  transform: {
-    '^.+\\.ts?$': 'ts-jest',
+// jest.config.mjs
+import { defaults } from 'jest-config';
+
+/** @type {import('jest').Config} */
+const config = {
+  extensionsToTreatAsEsm: ['.ts'],
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
   },
-  transformIgnorePatterns: ['<rootDir>/node_modules/'],
-  collectCoverage: true,
-  coverageDirectory: 'reports/coverage',
-  reporters: [
-    'default',
-    ['jest-junit', { outputDirectory: 'reports/jest-junit' }],
-    [
-      './node_modules/jest-html-reporter',
-      { outputPath: 'reports/jest-html-reporter/index.html' },
+  transform: {
+    '^.+\\.tsx?$': [
+      'ts-jest',
+      {
+        useESM: true,
+      },
     ],
-  ],
-  testPathIgnorePatterns: ['/node_modules/', '/bin/', '/dist/'],
+  },
+  transformIgnorePatterns: ['/node_modules/(?!(@octokit)/)'],
+  moduleFileExtensions: [...defaults.moduleFileExtensions, 'mts', 'cts'],
+  testEnvironment: 'node',
+  testMatch: ['**/*.test.ts'],
+  preset: 'ts-jest/presets/default-esm',
 };
+
+export default config;
