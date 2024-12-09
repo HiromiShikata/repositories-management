@@ -27,14 +27,6 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
 
-      - name: Install commitlint
-        run: |
-          npm install --save-dev @commitlint/{config-conventional,cli}
-
-      - name: Lint commits
-        run: |
-          npx commitlint --from=origin/main --to=HEAD --config ./.github/workflows/configs/commitlint.config.js
-
       - name: Check for DONTMERGE
         run: |
           result=$(find . \
@@ -52,3 +44,9 @@ jobs:
         with:
           exclude-branches: 'release/**, dependabot/**, project-common/**'
           loose-matching: true
+      - name: Install commitlint
+        run: |
+          npm install --save-dev @commitlint/{config-conventional,cli}
+      - name: Lint commits
+        run: |
+          npx commitlint --from=origin/main --to=HEAD --config ./.github/workflows/configs/commitlint.config.js
