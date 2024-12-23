@@ -169,7 +169,7 @@ jobs:
                                     "strict": true,
                                     "contexts": ["test", "format", "commit-lint", "create_and_enable_automerge"]
                                   },
-                                  "enforce_admins": true,
+                                  "enforce_admins": false,
                                   "required_pull_request_reviews": {
                                     "required_approving_review_count": 0,
                                     "require_code_owner_reviews": true
