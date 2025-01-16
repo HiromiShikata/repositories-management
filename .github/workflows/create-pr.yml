@@ -24,7 +24,9 @@ jobs:
           destination_branch: 'main'
           source_branch: ''
           pr_title: '${{ steps.branch_name.outputs.branch }}'
-          pr_body: 'This is an auto-create PR.'
+          pr_body: |
+            :magic_wand: :sparkles:
+
           draft: false
 
       - name: Assign PR to author
