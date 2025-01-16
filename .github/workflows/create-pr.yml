@@ -27,7 +27,6 @@ jobs:
           pr_body: |
             :magic_wand: :sparkles:
 
-            
           draft: false
 
       - name: Assign PR to author
