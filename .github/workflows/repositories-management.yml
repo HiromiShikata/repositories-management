@@ -42,7 +42,6 @@ jobs:
             ".github/workflows/commit-lint.yml"
             ".github/workflows/configs/commitlint.config.js"
             ".github/workflows/create-pr.yml"
-            ".github/workflows/empty-format-test-job.yml"
             ".github/CODEOWNERS"
             "renovate.json"
             )
