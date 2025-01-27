@@ -171,10 +171,7 @@ jobs:
                                   "enforce_admins": false,
                                   "required_pull_request_reviews": {
                                     "required_approving_review_count": 1,
-                                    "require_code_owner_reviews": true,
-                                    "bypass_pull_request_allowances": {
-                                      "users": ["HiromiShikata"]
-                                    }
+                                    "require_code_owner_reviews": true
                                   },
                                   "restrictions": null,
                                   "required_linear_history": false,
