@@ -39,7 +39,6 @@ env:
   field_id: PVTF_lAHOAGJHa84AFWnrzgIk_H0
   team_repo: '7sea.world, blog-tech, media-pinpoint-research, instagram-beauty-aesthetics-review, umino-corporait-operation, instagram-14LBaggageTraveler, hashigoya-project'
 
-
 jobs:
   umino-job:
     if: github.event_name != 'issue_comment' || github.event.comment.user.login != 'umino-bot'
