@@ -40,7 +40,7 @@ env:
 
 jobs:
   umino-job:
-    name: opened_or_reopened
+    if: github.event_name != 'issue_comment' || github.event.comment.user.login != 'umino-bot'
     runs-on: ubuntu-latest
     steps:
       - name: Move issue to ${{ env.unread }}
