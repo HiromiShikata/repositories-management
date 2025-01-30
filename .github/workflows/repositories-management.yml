@@ -70,15 +70,10 @@ jobs:
               cp $FILE $REPO/$FILE
             done
 
-            if echo "$TEAM_REPOS" | grep -qw "${REPO}"; then
-              echo "team repository: $REPO"
-              FILE=".github/workflows/assign-all-cards-to-owner.yml"
-              rm -f $REPO/$FILE
-            else
-              echo "non-team repository: $REPO"
-              FILE=".github/workflows/assign-all-cards-to-owner.yml"
-              cp -f $FILE $REPO/$FILE
-            fi
+            FILE=".github/workflows/assign-all-cards-to-owner.yml"
+            rm -f $REPO/$FILE
+            FILE=".github/workflows/assign-all-card-to-owner.yml"
+            rm -f $REPO/$FILE
             cd $REPO
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"
