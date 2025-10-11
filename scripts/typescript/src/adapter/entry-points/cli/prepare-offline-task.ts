@@ -22,8 +22,7 @@ const run = async () => {
     const nextActionDate =
       projectFields.find((field) => field.fieldName === 'nextactiondate')
         ?.fieldValue || null;
-    if (status.endsWith('Done')
-        || status.endsWith('Icebox')) {
+    if (status.endsWith('Done') || status.endsWith('Icebox')) {
       continue;
     } else if (
       nextActionDate &&
