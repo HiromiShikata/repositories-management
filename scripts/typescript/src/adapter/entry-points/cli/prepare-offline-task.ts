@@ -44,22 +44,26 @@ movenextactiondateto YYYYMMDD
 changeassignee accountName
 close
 `;
-    if (assignees.includes('masaori')) {
-      await restIssueRepository.createComment(
-        issue.url,
-        `#offline-masaori
+    try {
+      if (assignees.includes('masaori')) {
+        await restIssueRepository.createComment(
+          issue.url,
+          `#offline-masaori
 
 ${descriptionForOfflineControl}
 `,
-      );
-    } else if (assignees.includes('HiromiShikata')) {
-      await restIssueRepository.createComment(
-        issue.url,
-        `#offline
+        );
+      } else if (assignees.includes('HiromiShikata')) {
+        await restIssueRepository.createComment(
+          issue.url,
+          `#offline
 
 ${descriptionForOfflineControl}
 `,
-      );
+        );
+      }
+    } catch (e) {
+      console.error(e);
     }
   }
 };
