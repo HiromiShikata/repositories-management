@@ -22,8 +22,7 @@ const run = async () => {
     const nextActionDate =
       projectFields.find((field) => field.fieldName === 'nextactiondate')
         ?.fieldValue || null;
-    if (status.endsWith('Done')
-        || status.endsWith('Icebox')) {
+    if (status.endsWith('Done') || status.endsWith('Icebox')) {
       continue;
     } else if (
       nextActionDate &&
@@ -45,22 +44,26 @@ movenextactiondateto YYYYMMDD
 changeassignee accountName
 close
 `;
-    if (assignees.includes('masaori')) {
-      await restIssueRepository.createComment(
-        issue.url,
-        `#offline-masaori
+    try {
+      if (assignees.includes('masaori')) {
+        await restIssueRepository.createComment(
+          issue.url,
+          `#offline-masaori
 
 ${descriptionForOfflineControl}
 `,
-      );
-    } else if (assignees.includes('HiromiShikata')) {
-      await restIssueRepository.createComment(
-        issue.url,
-        `#offline
+        );
+      } else if (assignees.includes('HiromiShikata')) {
+        await restIssueRepository.createComment(
+          issue.url,
+          `#offline
 
 ${descriptionForOfflineControl}
 `,
-      );
+        );
+      }
+    } catch (e) {
+      console.error(e);
     }
   }
 };

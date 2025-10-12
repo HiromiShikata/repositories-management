@@ -1,6 +1,6 @@
 const run = async () => {
   const now = new Date();
-  console.log(now)
+  console.log(now);
 };
 
 run().catch((e) => {
