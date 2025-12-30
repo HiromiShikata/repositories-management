@@ -83,3 +83,29 @@
   aliases: []
   description: ''
   delete: false
+- name: category:review
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: category:accounting
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: category:deep-research
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: category:chore
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: category:browser
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+
