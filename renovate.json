@@ -26,6 +26,10 @@
     {
       "matchPackageNames": ["eslint-plugin-unused-imports"],
       "allowedVersions": "<4.0.0"
+    },
+    {
+      "matchPackageNames": ["@google/clasp"],
+      "allowedVersions": "3.1.0"
     }
   ]
 }
