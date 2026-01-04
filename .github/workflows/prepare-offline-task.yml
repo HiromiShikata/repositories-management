@@ -2,6 +2,12 @@ name: Prepare offline task
 
 on:
   workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Number of issues to process'
+        required: false
+        default: '5'
+        type: string
 
 jobs:
   prepare-offline-task:
@@ -19,3 +25,4 @@ jobs:
       - run: npm run run:prepare-offline-task
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          LIMIT: ${{ github.event.inputs.limit || '5' }}
