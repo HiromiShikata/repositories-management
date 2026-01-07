@@ -41,7 +41,7 @@ env:
 
 jobs:
   umino-job:
-    if: github.event_name != 'issue_comment' || github.event.comment.user.login != 'umino-bot'
+    if: (github.event_name != 'issue_comment' || github.event.comment.user.login != 'umino-bot') && github.event.action != 'labeled'
     runs-on: ubuntu-latest
     steps:
       - name: Move issue to ${{ env.unread }}
