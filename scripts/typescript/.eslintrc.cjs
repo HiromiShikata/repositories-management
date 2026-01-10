@@ -50,6 +50,6 @@ module.exports = {
         ],
       },
     ],
-    'unused-imports/no-unused-imports-ts': 'error',
+    'unused-imports/no-unused-imports': 'error',
   },
 };
