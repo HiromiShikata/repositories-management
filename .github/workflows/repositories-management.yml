@@ -43,6 +43,7 @@ jobs:
             ".github/workflows/configs/commitlint.config.js"
             ".github/workflows/create-pr.yml"
             ".github/CODEOWNERS"
+            ".github/instructions/code-review.instructions.md"
             "renovate.json"
             )
           for REPO in $REPO_LIST; do
