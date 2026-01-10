@@ -43,6 +43,7 @@ jobs:
             ".github/workflows/configs/commitlint.config.js"
             ".github/workflows/create-pr.yml"
             ".github/CODEOWNERS"
+            ".github/copilot-instructions.md"
             "renovate.json"
             )
           for REPO in $REPO_LIST; do
@@ -177,9 +178,71 @@ jobs:
             HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
             echo "$RESPONSE"
             if [ "$HTTP_STATUS" -eq 200 ]; then
-              echo "Auto-merge and branch deletion settings updated for $REPO"
+              echo "Branch protection settings updated for $REPO"
             else
-              echo "Error updating settings for $REPO"
+              echo "Error updating branch protection settings for $REPO"
             fi
+            sleep 30s
+          done
+      - name: Create or update Copilot code review ruleset for all repositories
+        run: |
+          ORG_NAME="${{ env.ORG_NAME }}"
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | .name')
+          GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
+          RULESET_NAME="copilot-code-review"
+
+          for REPO in $REPO_LIST; do
+            echo "Processing Copilot code review ruleset for $REPO"
+
+            EXISTING_RULESETS=$(curl -s -H "Authorization: token $GH_BOT_TOKEN" \
+                                      -H "Accept: application/vnd.github+json" \
+                                      "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets")
+
+            RULESET_ID=$(echo "$EXISTING_RULESETS" | jq -r ".[] | select(.name == \"$RULESET_NAME\") | .id")
+
+            RULESET_PAYLOAD='{
+              "name": "'"$RULESET_NAME"'",
+              "target": "branch",
+              "enforcement": "active",
+              "conditions": {
+                "ref_name": {
+                  "include": ["~DEFAULT_BRANCH"],
+                  "exclude": []
+                }
+              },
+              "rules": [
+                {
+                  "type": "copilot_code_review",
+                  "parameters": {
+                    "review_draft_pull_requests": false,
+                    "review_on_push": true
+                  }
+                }
+              ]
+            }'
+
+            if [ -n "$RULESET_ID" ] && [ "$RULESET_ID" != "null" ]; then
+              echo "Updating existing ruleset $RULESET_ID for $REPO"
+              RESPONSE=$(curl -s -X PUT -H "Authorization: token $GH_BOT_TOKEN" \
+                              -H "Accept: application/vnd.github+json" \
+                              "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets/$RULESET_ID" \
+                              -d "$RULESET_PAYLOAD" -w "\n%{http_code}")
+            else
+              echo "Creating new ruleset for $REPO"
+              RESPONSE=$(curl -s -X POST -H "Authorization: token $GH_BOT_TOKEN" \
+                              -H "Accept: application/vnd.github+json" \
+                              "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" \
+                              -d "$RULESET_PAYLOAD" -w "\n%{http_code}")
+            fi
+
+            HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+            echo "$RESPONSE"
+
+            if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 201 ]; then
+              echo "Copilot code review ruleset configured for $REPO"
+            else
+              echo "Error configuring Copilot code review ruleset for $REPO (HTTP $HTTP_STATUS)"
+            fi
+
             sleep 30s
           done
