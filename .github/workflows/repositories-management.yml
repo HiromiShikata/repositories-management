@@ -44,6 +44,7 @@ jobs:
             ".github/workflows/create-pr.yml"
             ".github/CODEOWNERS"
             ".github/copilot-instructions.md"
+            ".github/instructions/code-review.instructions.md"
             "renovate.json"
             )
           for REPO in $REPO_LIST; do
