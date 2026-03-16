@@ -82,7 +82,7 @@ jobs:
             git diff
             git add .
             git diff --staged --quiet && { echo "No changes in $REPO"; cd ..; rm -rf $REPO; continue; }
-            MEANINGFUL_DIFF=$(git diff --staged | grep '^[+-]' | grep -v '^+++\|^---' | sed "s/[\"']/Q/g" | tr -s ' \t' ' ' | sed 's/^ //;s/ $//' | sed 's/^[+-]//' | sort | uniq -c | awk '$1 % 2 != 0 {print}')
+            MEANINGFUL_DIFF=$(git diff --staged | grep '^[+-]' | grep -v '^+++ \|^--- ' | sed "s/[\"']/Q/g" | sed 's/^[+-]//' | sort | uniq -c | awk '$1 % 2 != 0 {print}')
             if [ -z "$MEANINGFUL_DIFF" ]; then
               echo "Only whitespace/quote-style changes in $REPO, skipping"
               cd ..; rm -rf $REPO; continue
