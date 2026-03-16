@@ -82,6 +82,11 @@ jobs:
             git diff
             git add .
             git diff --staged --quiet && { echo "No changes in $REPO"; cd ..; rm -rf $REPO; continue; }
+            MEANINGFUL_DIFF=$(git diff --staged | grep '^[+-]' | grep -v '^+++\|^---' | sed "s/[\"']/Q/g" | tr -s ' \t' ' ' | sed 's/^ //;s/ $//' | sed 's/^[+-]//' | sort | uniq -c | awk '$1 % 2 != 0 {print}')
+            if [ -z "$MEANINGFUL_DIFF" ]; then
+              echo "Only whitespace/quote-style changes in $REPO, skipping"
+              cd ..; rm -rf $REPO; continue
+            fi
             git commit -m "autogen: updated common files in $ORG_NAME" 
             ACTION_RUN_ID=${{ github.run_id }}
             ACTION_LINK="https://github.com/${{ github.repository }}/actions/runs/$ACTION_RUN_ID"
