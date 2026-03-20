@@ -179,7 +179,8 @@ jobs:
     runs-on: ubuntu-latest
     name: Check linked issues in pull requests
     if: >-
-      (github.event_name == 'pull_request')
+      (github.event_name == 'pull_request') &&
+      github.actor != 'dependabot[bot]'
     steps:
       - uses: nearform-actions/github-action-check-linked-issues@v1
         id: check-linked-issues
