@@ -183,7 +183,7 @@ jobs:
     steps:
       - uses: nearform-actions/github-action-check-linked-issues@v1
         id: check-linked-issues
-        if: github.actor != 'dependabot[bot]'
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         with:
           exclude-branches: 'release/**, dependabot/**, project-common/**, renovate/**'
           github-token: ${{ secrets.GH_TOKEN }}
