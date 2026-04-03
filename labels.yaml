@@ -78,33 +78,39 @@
   aliases: []
   description: ''
   delete: false
-- name: category:impl-plan
+- name: llm-agent:impl-plan
   color: '#0E8A16'
-  aliases: []
+  aliases:
+    - category:impl-plan
   description: ''
   delete: false
-- name: category:review
+- name: llm-agent:review
   color: '#0E8A16'
-  aliases: []
+  aliases:
+    - category:review
   description: ''
   delete: false
-- name: category:accounting
+- name: llm-agent:accounting
   color: '#0E8A16'
-  aliases: []
+  aliases:
+    - category:accounting
   description: ''
   delete: false
-- name: category:deep-research
+- name: llm-agent:deep-research
   color: '#0E8A16'
-  aliases: []
+  aliases:
+    - category:deep-research
   description: ''
   delete: false
-- name: category:chore
+- name: llm-agent:chore
   color: '#0E8A16'
-  aliases: []
+  aliases:
+    - category:chore
   description: ''
   delete: false
-- name: category:browser
+- name: llm-agent:browser
   color: '#0E8A16'
-  aliases: []
+  aliases:
+    - category:browser
   description: ''
   delete: false
