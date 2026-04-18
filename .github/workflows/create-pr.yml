@@ -8,6 +8,7 @@ on:
 jobs:
   create_and_enable_automerge:
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
