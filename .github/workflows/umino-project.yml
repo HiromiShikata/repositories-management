@@ -102,13 +102,15 @@ jobs:
           github.event.action == 'assigned' || github.event.action == 'unassigned')
 
       - name: Create Issue
-        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && contains(github.event.comment.body, '/createissue') }}
+        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' }}
         uses: actions/github-script@v9
         with:
           github-token: ${{secrets.GH_TOKEN}}
           script: |
             const commentBody = context.payload.comment.body;
-            const createIssueIndex = commentBody.indexOf('/createissue');
+            const commandMatch = /(^|\n)\s*\/createissue\b/m.exec(commentBody);
+            if (!commandMatch) return;
+            const createIssueIndex = commentBody.indexOf('/createissue', commandMatch.index);
             const issueTitle = commentBody.slice(createIssueIndex + 12).split('\n')[0].trim();
             const issueNumber = context.issue.number;
             const commentId = context.payload.comment.id;
@@ -116,7 +118,7 @@ jobs:
             const issueBody = `
             ${commentBody.slice(createIssueIndex + 12).trim()}
             Created from a comment: ${commentLink}
-            `;      
+            `;
             const newIssue = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -125,11 +127,13 @@ jobs:
               assignees: ['HiromiShikata']
             });
       - name: Close Issue
-        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && (contains(github.event.comment.body, '/close') || contains(github.event.comment.body, '/done')) }}
+        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' }}
         uses: actions/github-script@v9
         with:
           github-token: ${{secrets.GH_TOKEN}}
           script: |
+            const body = context.payload.comment.body;
+            if (!/(^|\n)\s*\/(close|done)\b/m.test(body)) return;
             await github.rest.issues.update({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -137,9 +141,13 @@ jobs:
               state: 'closed'
             });
       - name: Update Date Field
-        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && contains(github.event.comment.body, '/movenextactiondateto') }}
+        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' }}
         run: |
-          DATE_STRING=$(echo "${{ github.event.comment.body }}" | grep -oP '(?<=/movenextactiondateto )\d{8}')
+          if ! echo "${{ github.event.comment.body }}" | grep -qP '^\s*/movenextactiondateto\b'; then
+            echo "No standalone /movenextactiondateto command found, skipping"
+            exit 0
+          fi
+          DATE_STRING=$(echo "${{ github.event.comment.body }}" | grep -P '^\s*/movenextactiondateto ' | grep -oP '\d{8}')
           OWNER=$(echo ${{ github.repository }} | cut -d '/' -f 1)
           REPO=$(echo ${{ github.repository }} | cut -d '/' -f 2)
           ITEM_ID=$(curl -X POST -H "Authorization: bearer ${{ secrets.GH_TOKEN }}" -H "Content-Type: application/json" --data '{ "query": "query { repository(owner: \"'$OWNER'\", name: \"'$REPO'\") { issue(number: '${{ github.event.issue.number }}') { projectItems(first: 10) { nodes { id } } } } }" }' https://api.github.com/graphql | jq -r '.data.repository.issue.projectItems.nodes[0].id')
@@ -151,14 +159,15 @@ jobs:
             --header "Content-Type: application/json" \
             --data "$UPDATE_FIELD_DATA"
       - name: Change Assignee
-        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && contains(github.event.comment.body, '/changeassignee ') }}
+        if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' }}
         uses: actions/github-script@v9
         with:
           github-token: ${{secrets.GH_TOKEN}}
           script: |
             const commentBody = context.payload.comment.body;
-            const assigneeIndex = commentBody.indexOf('/changeassignee ') + 16;
-            const assigneeName = commentBody.slice(assigneeIndex).split(' ')[0].trim();
+            const commandMatch = commentBody.match(/(^|\n)\s*\/changeassignee\s+(\S+)/m);
+            if (!commandMatch) return;
+            const assigneeName = commandMatch[2].trim();
             await github.rest.issues.update({
               owner: context.repo.owner,
               repo: context.repo.repo,
