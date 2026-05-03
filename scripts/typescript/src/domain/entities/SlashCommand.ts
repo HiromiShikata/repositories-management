@@ -1,21 +1,16 @@
-export type SlashCommandType =
-  | 'createissue'
-  | 'close'
-  | 'done'
-  | 'movenextactiondateto'
-  | 'changeassignee';
+export const SLASH_COMMAND_PATTERNS = {
+  createissue: /(^|\n)\s*\/createissue\b/m,
+  closeOrDone: /(^|\n)\s*\/(close|done)\b/m,
+  movenextactiondateto: /(^|\n)\s*\/movenextactiondateto\b/m,
+  changeassignee: /(^|\n)\s*\/changeassignee\s+(\S+)/m,
+} as const;
 
 export class SlashCommand {
-  constructor(
-    public readonly type: SlashCommandType,
-    public readonly argument: string,
-  ) {}
-
   static detectCreateIssue(commentBody: string): {
     title: string;
     body: string;
   } | null {
-    const commandMatch = /(^|\n)\s*\/createissue\b/m.exec(commentBody);
+    const commandMatch = SLASH_COMMAND_PATTERNS.createissue.exec(commentBody);
     if (!commandMatch) return null;
     const createIssueIndex = commentBody.indexOf(
       '/createissue',
@@ -30,11 +25,12 @@ export class SlashCommand {
   }
 
   static detectClose(commentBody: string): boolean {
-    return /(^|\n)\s*\/(close|done)\b/m.test(commentBody);
+    return SLASH_COMMAND_PATTERNS.closeOrDone.test(commentBody);
   }
 
   static detectMoveNextActionDate(commentBody: string): string | null {
-    const commandMatch = /(^|\n)\s*\/movenextactiondateto\b/m.exec(commentBody);
+    const commandMatch =
+      SLASH_COMMAND_PATTERNS.movenextactiondateto.exec(commentBody);
     if (!commandMatch) return null;
     const dateMatch = /\/movenextactiondateto\s+(\d{8})/.exec(
       commentBody.slice(commandMatch.index),
@@ -43,7 +39,8 @@ export class SlashCommand {
   }
 
   static detectChangeAssignee(commentBody: string): string | null {
-    const commandMatch = /(^|\n)\s*\/changeassignee\s+(\S+)/m.exec(commentBody);
+    const commandMatch =
+      SLASH_COMMAND_PATTERNS.changeassignee.exec(commentBody);
     if (!commandMatch) return null;
     return commandMatch[2].trim();
   }

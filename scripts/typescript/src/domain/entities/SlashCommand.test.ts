@@ -1,19 +1,57 @@
-import { SlashCommand } from './SlashCommand';
+import * as fs from 'fs';
+import * as path from 'path';
+import { SlashCommand, SLASH_COMMAND_PATTERNS } from './SlashCommand';
 
 describe('SlashCommand', () => {
+  describe('workflow regex parity', () => {
+    const workflowContent = fs.readFileSync(
+      path.join(
+        __dirname,
+        '../../../../../.github/workflows/umino-project.yml',
+      ),
+      'utf8',
+    );
+
+    test('umino-project.yml uses the same createissue pattern', () => {
+      expect(workflowContent).toContain(
+        SLASH_COMMAND_PATTERNS.createissue.source,
+      );
+    });
+
+    test('umino-project.yml uses the same closeOrDone pattern', () => {
+      expect(workflowContent).toContain(
+        SLASH_COMMAND_PATTERNS.closeOrDone.source,
+      );
+    });
+
+    test('umino-project.yml uses the same movenextactiondateto pattern', () => {
+      expect(workflowContent).toContain(
+        SLASH_COMMAND_PATTERNS.movenextactiondateto.source,
+      );
+    });
+
+    test('umino-project.yml uses the same changeassignee pattern', () => {
+      expect(workflowContent).toContain(
+        SLASH_COMMAND_PATTERNS.changeassignee.source,
+      );
+    });
+  });
+
   describe('detectCreateIssue', () => {
     test('detects command at start of comment', () => {
       const result = SlashCommand.detectCreateIssue('/createissue Fix the bug');
       expect(result).not.toBeNull();
       expect(result?.title).toBe('Fix the bug');
+      expect(result?.body).toBe('Fix the bug');
     });
 
-    test('detects command after newline', () => {
+    test('detects command after newline with multi-line body', () => {
       const result = SlashCommand.detectCreateIssue(
-        'Some text\n/createissue Fix the bug',
+        'Some text\n/createissue Fix the bug\nBody line 2',
       );
       expect(result).not.toBeNull();
       expect(result?.title).toBe('Fix the bug');
+      expect(result?.body).toBe('Fix the bug\nBody line 2');
     });
 
     test('detects command with leading whitespace on line', () => {
