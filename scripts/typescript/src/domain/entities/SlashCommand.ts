@@ -5,6 +5,8 @@ export const SLASH_COMMAND_PATTERNS = {
   changeassignee: /(^|\n)\s*\/changeassignee\s+(\S+)/m,
 } as const;
 
+const CREATE_ISSUE_COMMAND = '/createissue';
+
 export class SlashCommand {
   static detectCreateIssue(commentBody: string): {
     title: string;
@@ -13,14 +15,15 @@ export class SlashCommand {
     const commandMatch = SLASH_COMMAND_PATTERNS.createissue.exec(commentBody);
     if (!commandMatch) return null;
     const createIssueIndex = commentBody.indexOf(
-      '/createissue',
+      CREATE_ISSUE_COMMAND,
       commandMatch.index,
     );
-    const title = commentBody
-      .slice(createIssueIndex + 12)
-      .split('\n')[0]
-      .trim();
-    const body = commentBody.slice(createIssueIndex + 12).trim();
+    const afterCommand = commentBody.slice(
+      createIssueIndex + CREATE_ISSUE_COMMAND.length,
+    );
+    const title = afterCommand.split('\n')[0].trim();
+    if (!title) return null;
+    const body = afterCommand.trim();
     return { title, body };
   }
 
