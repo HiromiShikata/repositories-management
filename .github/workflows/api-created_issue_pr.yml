@@ -1,0 +1,65 @@
+name: Add to Project
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_or_pr_url:
+        description: 'Issue or PR URL'
+        required: true
+        default: ''
+
+jobs:
+  add-to-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add to Project
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          ISSUE_OR_PR_URL="${{ github.event.inputs.issue_or_pr_url }}"
+
+          REPO_PATH=$(echo "$ISSUE_OR_PR_URL" | awk -F'/' '{print $4"/"$5}')
+          NUMBER=$(echo "$ISSUE_OR_PR_URL" | grep -oE '[0-9]+$')
+
+          if [ -z "$NUMBER" ]; then
+            echo "Failed to extract number from URL: $ISSUE_OR_PR_URL"
+            exit 1
+          fi
+
+          if [ -z "$REPO_PATH" ]; then
+            echo "Failed to extract repo path from URL: $ISSUE_OR_PR_URL"
+            exit 1
+          fi
+
+          if echo "$ISSUE_OR_PR_URL" | grep -q "/pull/"; then
+            RESOURCE_TYPE="pulls"
+          else
+            RESOURCE_TYPE="issues"
+          fi
+
+          REST_RESPONSE=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$REPO_PATH/$RESOURCE_TYPE/$NUMBER")
+          NODE_ID=$(echo "$REST_RESPONSE" | jq -r '.node_id')
+
+          if [ -z "$NODE_ID" ] || [ "$NODE_ID" = "null" ]; then
+            echo "Failed to get node ID. REST response:"
+            echo "$REST_RESPONSE"
+            exit 1
+          fi
+
+          echo "Node ID: $NODE_ID"
+
+          RESPONSE=$(curl -s -X POST -H "Authorization: bearer $GITHUB_TOKEN" \
+                             -H "Content-Type: application/json" \
+                             https://api.github.com/graphql \
+                             -d "{\"query\":\"mutation { addProjectV2ItemById(input: { contentId: \\\"$NODE_ID\\\", projectId: \\\"PVT_kwHOAGJHa84AFWnr\\\" }) { item { id } } }\"}")
+          echo "$RESPONSE"
+
+          if ! echo "$RESPONSE" | jq '.' > /dev/null 2>&1; then
+            echo "Non-JSON response received"
+            exit 1
+          fi
+
+          if echo "$RESPONSE" | jq -e '.errors' > /dev/null; then
+            echo "GraphQL error occurred"
+            exit 1
+          fi
