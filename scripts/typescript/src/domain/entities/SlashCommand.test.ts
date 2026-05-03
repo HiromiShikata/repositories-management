@@ -178,6 +178,14 @@ All CI checks passed.`;
         SlashCommand.detectMoveNextActionDate('/movenextactiondateto'),
       ).toBeNull();
     });
+
+    test('returns null when command line lacks date but later mid-line reference has one', () => {
+      expect(
+        SlashCommand.detectMoveNextActionDate(
+          '/movenextactiondateto\nsome text /movenextactiondateto 20260601',
+        ),
+      ).toBeNull();
+    });
   });
 
   describe('detectChangeAssignee', () => {

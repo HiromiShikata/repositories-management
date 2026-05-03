@@ -35,9 +35,11 @@ export class SlashCommand {
     const commandMatch =
       SLASH_COMMAND_PATTERNS.movenextactiondateto.exec(commentBody);
     if (!commandMatch) return null;
-    const dateMatch = /\/movenextactiondateto\s+(\d{8})/.exec(
-      commentBody.slice(commandMatch.index),
-    );
+    const commandLine = commentBody
+      .slice(commandMatch.index)
+      .replace(/^\n/, '')
+      .split('\n')[0];
+    const dateMatch = /\/movenextactiondateto\s+(\d{8})/.exec(commandLine);
     return dateMatch ? dateMatch[1] : null;
   }
 

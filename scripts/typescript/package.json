@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "prebuild": "npm run doctor",
-    "doctor:node-version": "check-node-version --node 20 --npx 10 --npm 10",
+    "doctor:node-version": "check-node-version --node 24 --npx 10 --npm 10",
     "doctor": "npm run doctor:node-version",
     "prettier": "prettier --write '**/*'",
     "lint": "eslint src",
@@ -42,7 +42,7 @@
     "@semantic-release/commit-analyzer": "^13.0.0",
     "@semantic-release/git": "^10.0.1",
     "@types/jest": "^29.5.13",
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "check-node-version": "^4.2.1",
