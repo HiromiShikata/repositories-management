@@ -42,6 +42,7 @@ jobs:
             ".github/workflows/commit-lint.yml"
             ".github/workflows/configs/commitlint.config.js"
             ".github/workflows/create-pr.yml"
+            ".github/workflows/api-created_issue_pr.yml"
             ".github/CODEOWNERS"
             ".github/copilot-instructions.md"
             ".github/instructions/code-review.instructions.md"
