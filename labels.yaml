@@ -108,17 +108,25 @@
   aliases: []
   description: ''
   delete: false
-- name: llm-model:claude-opus-4.6
+- name: llm-model:claude-opus-4-6
   color: '#0E8A16'
-  aliases: []
+  aliases:
+    - llm-model:claude-opus-4.6
   description: ''
   delete: false
-- name: llm-model:claude-sonnet-4.6
+- name: llm-model:claude-sonnet-4-6
   color: '#0E8A16'
-  aliases: []
+  aliases:
+    - llm-model:claude-sonnet-4.6
   description: ''
   delete: false
-- name: llm-model:claude-haiku
+- name: llm-model:claude-haiku-4-5
+  color: '#0E8A16'
+  aliases:
+    - llm-model:claude-haiku
+  description: ''
+  delete: false
+- name: llm-model:gpt-5.5
   color: '#0E8A16'
   aliases: []
   description: ''
