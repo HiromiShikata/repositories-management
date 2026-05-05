@@ -25,16 +25,32 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_BOT_TOKEN: ${{ secrets.GH_TOKEN }}
+      GH_APP_ID: ${{ secrets.GH_APP_ID }}
+      GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v6
       - run: |
           sudo apt-get update
-          sudo apt-get install gh
+          sudo apt-get install -y gh
       - run: |
           echo $GH_BOT_TOKEN | gh auth login --with-token
+      - name: Generate App token for PR approval
+        id: app-token
+        if: ${{ env.GH_APP_ID != '' && env.GH_APP_PRIVATE_KEY != '' }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ env.GH_APP_ID }}
+          private-key: ${{ env.GH_APP_PRIVATE_KEY }}
+          owner: ${{ env.ORG_NAME }}
       - name: Sync Files to All repositories
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          APP_TOKEN_OUTCOME: ${{ steps.app-token.outcome }}
         run: |
           ORG_NAME="${{ env.ORG_NAME }}"
+          COMMON_FILES_PR_TITLE="Updated common files in $ORG_NAME"
           GITHUB_USER=$(curl -s -H "Authorization: token $GH_BOT_TOKEN" https://api.github.com/user | jq -r '.login')
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isFork | jq -r '.[] | select(.isArchived == false and .isFork == false) | .name')
           FILES_TO_SYNC=(
@@ -47,20 +63,29 @@ jobs:
             ".github/copilot-instructions.md"
             ".github/instructions/code-review.instructions.md"
             "renovate.json"
-            )
+          )
+          if [ "$APP_TOKEN_OUTCOME" = "failure" ]; then
+            echo "Error: GitHub App token generation failed."
+            echo "Verify that GH_APP_ID and GH_APP_PRIVATE_KEY are correct and the App is installed on $ORG_NAME."
+          elif [ "$APP_TOKEN_OUTCOME" = "skipped" ]; then
+            echo "GH_APP_ID or GH_APP_PRIVATE_KEY not configured. PRs will not be auto-approved."
+          fi
+          if [ -n "$APP_SLUG" ] && ! grep -q "${APP_SLUG}\[bot\]" .github/CODEOWNERS; then
+            echo "Action required: @${APP_SLUG}[bot] is not in .github/CODEOWNERS."
+            echo "Add '@${APP_SLUG}[bot]' alongside @HiromiShikata so the App approval satisfies require_code_owner_reviews."
+          fi
           for REPO in $REPO_LIST; do
             echo "REPO: $REPO"
             gh repo clone $ORG_NAME/$REPO
 
             cd $REPO
-            PR_LIST=$(gh pr list --state open --json number,title -q ".[] | select(.title == \"Updated common files in HiromiShikata\").number")
+            PR_LIST=$(gh pr list --state open --json number,title -q ".[] | select(.title == \"$COMMON_FILES_PR_TITLE\").number")
             echo "PR_LIST: ${PR_LIST}"
             for PR_NUMBER in $PR_LIST; do
               echo "PR_NUMBER: ${PR_NUMBER}"
               gh pr close $PR_NUMBER
             done
             prefix="project-common/update-common-files-"
-
             gh api repos/:owner/:repo/branches | jq -r --arg prefix "$prefix" '.[] | select(.name | startswith($prefix)) | .name' | while read branch_name; do
               echo "Deleting branch: $branch_name"
               gh api -X DELETE /repos/:owner/:repo/git/refs/heads/$branch_name
@@ -88,16 +113,44 @@ jobs:
               echo "Only whitespace/quote-style changes in $REPO, skipping"
               cd ..; rm -rf $REPO; continue
             fi
-            git commit -m "autogen: updated common files in $ORG_NAME" 
-            ACTION_RUN_ID=${{ github.run_id }}
-            ACTION_LINK="https://github.com/${{ github.repository }}/actions/runs/$ACTION_RUN_ID"
+            git commit -m "autogen: updated common files in $ORG_NAME"
+            ACTION_LINK="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             BRANCH_NAME="project-common/update-common-files-$(date +%Y%m%d%H%M%S)"
             git switch -c $BRANCH_NAME
             git remote set-url origin https://$GITHUB_USER:$GH_BOT_TOKEN@github.com/$ORG_NAME/$REPO.git
             git remote -v
             git remote show origin
             git push origin $BRANCH_NAME
-            gh pr create --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK"
+            if PR_URL=$(gh pr create --title "$COMMON_FILES_PR_TITLE" --body "This PR has been created automatically. \nLog: $ACTION_LINK" 2>/tmp/gh_pr_create_err); then
+              echo "Created PR: $PR_URL"
+            elif grep -qi 'already exists' /tmp/gh_pr_create_err; then
+              cat /tmp/gh_pr_create_err >&2
+              PR_URL=$(gh pr list --head "$BRANCH_NAME" --state open --json url --jq ".[0].url" -R "$ORG_NAME/$REPO")
+              echo "Existing PR: $PR_URL"
+              RACE_PR_NUMBER=$(echo "$PR_URL" | grep -oE 'pull/[0-9]+' | grep -oE '[0-9]+')
+              if [ -n "$RACE_PR_NUMBER" ]; then
+                gh pr edit "$RACE_PR_NUMBER" --title "$COMMON_FILES_PR_TITLE" -R "$ORG_NAME/$REPO" \
+                  && echo "Updated PR $RACE_PR_NUMBER title" \
+                  || echo "Warning: Could not update PR $RACE_PR_NUMBER title in $REPO"
+              fi
+            else
+              cat /tmp/gh_pr_create_err >&2
+              echo "Error creating PR for $REPO"
+              cd ..
+              rm -rf $REPO
+              continue
+            fi
+            PR_NUMBER=$(echo "$PR_URL" | grep -oE 'pull/[0-9]+' | grep -oE '[0-9]+')
+            if [ -n "$PR_NUMBER" ] && [ "$APP_TOKEN_OUTCOME" = "success" ] && [ -n "$APP_TOKEN" ]; then
+              PR_TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title' -R "$ORG_NAME/$REPO" 2>/dev/null || echo "")
+              if [ "$PR_TITLE" = "$COMMON_FILES_PR_TITLE" ]; then
+                GH_TOKEN="$APP_TOKEN" gh pr review "$PR_NUMBER" --approve -R "$ORG_NAME/$REPO" \
+                  && echo "Approved PR $PR_NUMBER in $REPO" \
+                  || echo "Warning: Could not approve PR $PR_NUMBER in $REPO, continuing"
+              else
+                echo "Warning: PR $PR_NUMBER title '$PR_TITLE' does not match expected, skipping approval"
+              fi
+            fi
             cd ..
             rm -rf $REPO
             sleep 10s
