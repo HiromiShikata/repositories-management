@@ -32,7 +32,16 @@ jobs:
           sudo apt-get install gh
       - run: |
           echo $GH_BOT_TOKEN | gh auth login --with-token
+      - name: Generate hs-bot-gh-ap installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.HS_BOT_GH_AP_APP_ID }}
+          private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
+          owner: HiromiShikata
       - name: Sync Files to All repositories
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           ORG_NAME="${{ env.ORG_NAME }}"
           GITHUB_USER=$(curl -s -H "Authorization: token $GH_BOT_TOKEN" https://api.github.com/user | jq -r '.login')
@@ -93,11 +102,13 @@ jobs:
             ACTION_LINK="https://github.com/${{ github.repository }}/actions/runs/$ACTION_RUN_ID"
             BRANCH_NAME="project-common/update-common-files-$(date +%Y%m%d%H%M%S)"
             git switch -c $BRANCH_NAME
-            git remote set-url origin https://$GITHUB_USER:$GH_BOT_TOKEN@github.com/$ORG_NAME/$REPO.git
+            git remote set-url origin https://x-access-token:$APP_TOKEN@github.com/$ORG_NAME/$REPO.git
             git remote -v
             git remote show origin
             git push origin $BRANCH_NAME
-            gh pr create --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK"
+            PR_URL=$(GH_TOKEN=$APP_TOKEN gh pr create --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK")
+            echo "PR_URL: $PR_URL"
+            GH_TOKEN=$GH_BOT_TOKEN gh pr review --approve "$PR_URL"
             cd ..
             rm -rf $REPO
             sleep 10s
