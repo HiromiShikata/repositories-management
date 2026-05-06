@@ -129,10 +129,10 @@ jobs:
       HS_BOT_GH_AP_APP_ID: ${{ secrets.HS_BOT_GH_AP_APP_ID }}
       HS_BOT_GH_AP_PRIVATE_KEY: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
     steps:
-      - name: Upsert hs-bot-gh-ap App credentials to all active repos
+      - name: Upsert hs-bot-gh-ap App credentials to all non-archived repos
         run: |
           ORG_NAME="${{ env.ORG_NAME }}"
-          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isFork | jq -r '.[] | select(.isArchived == false and .isFork == false) | .name')
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
           for REPO in $REPO_LIST; do
             echo "REPO: $REPO"
             gh secret set HS_BOT_GH_AP_APP_ID --body "$HS_BOT_GH_AP_APP_ID" -R "$ORG_NAME/$REPO"
