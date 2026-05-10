@@ -57,15 +57,6 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
-      - name: Assign PR to author
-        if: steps.resolve_pr.outputs.pr_number
-        run: |
-          curl -s -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -d '{"assignees":["${{ github.actor }}"]}' \
-            "https://api.github.com/repos/${{ github.repository }}/issues/${{ steps.resolve_pr.outputs.pr_number }}/assignees"
-
       - name: Get PR Node ID
         if: steps.resolve_pr.outputs.pr_number
         id: get_pr_id
