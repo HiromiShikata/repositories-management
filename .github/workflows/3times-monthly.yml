@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-node@v6
       - run: |
           cd scripts/typescript
-          npm i 
+          npm i
           node src/adapter/entry-points/cli/three-times-monthly.ts
-      - env:
+        env:
           THREE_TIMES_MONTHLY_CONFIG: ${{ secrets.THREE_TIMES_MONTHLY_CONFIG }}
