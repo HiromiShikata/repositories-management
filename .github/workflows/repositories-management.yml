@@ -106,7 +106,7 @@ jobs:
             git remote -v
             git remote show origin
             git push origin $BRANCH_NAME
-            PR_URL=$(GH_TOKEN=$APP_TOKEN gh pr create --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK")
+            PR_URL=$(GH_TOKEN=$APP_TOKEN gh pr create --head $BRANCH_NAME --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK")
             echo "PR_URL: $PR_URL"
             GH_TOKEN=$GH_BOT_TOKEN gh pr review --approve "$PR_URL"
             cd ..
