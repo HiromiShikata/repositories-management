@@ -21,6 +21,7 @@ jobs:
         with:
           app-id: ${{ secrets.HS_BOT_GH_AP_APP_ID }}
           private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
+          owner: HiromiShikata
       - name: Add to Project
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
