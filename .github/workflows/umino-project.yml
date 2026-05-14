@@ -53,7 +53,7 @@ jobs:
       - name: Move issue to ${{ env.unread }}
         uses: leonsteinhaeuser/project-beta-automations@v2.2.1
         with:
-          gh_token: ${{ steps.app-token.outputs.token }}
+          gh_token: ${{ secrets.GH_TOKEN }}
           user: ${{ env.user }}
           project_id: ${{ env.project_id }}
           resource_node_id: ${{ github.event.pull_request.node_id || github.event.issue.node_id }}
@@ -70,7 +70,7 @@ jobs:
           NUMBER=$(echo ${{ github.event_name }} | grep -q "pull_request" && echo ${{ github.event.pull_request.number }} || echo ${{ github.event.issue.number }})
 
           QUERY_DATA='{ "query": "query { repository(owner: \"'$OWNER'\", name: \"'$REPO'\") { '${ENTITY_TYPE}'(number: '$NUMBER') { projectItems(first: 10) { nodes { id } } } } }" }'
-          RESPONSE=$(curl -X POST -H "Authorization: bearer ${{ steps.app-token.outputs.token }}" -H "Content-Type: application/json" --data "$QUERY_DATA" https://api.github.com/graphql)
+          RESPONSE=$(curl -X POST -H "Authorization: bearer ${{ secrets.GH_TOKEN }}" -H "Content-Type: application/json" --data "$QUERY_DATA" https://api.github.com/graphql)
 
           if echo $RESPONSE | grep -q "errors"; then
             echo "Error in GraphQL query"
@@ -92,7 +92,7 @@ jobs:
           CLEAR_FIELD_DATA="{\"query\":\"mutation { clearProjectV2ItemFieldValue(input: {projectId: \\\"${{ env.project_v2_id }}\\\", fieldId: \\\"${{ env.field_id }}\\\", itemId: \\\"$ITEM_ID\\\"}) { clientMutationId }}\"}"
           CLEAR_RESPONSE=$(curl --request POST \
             --url https://api.github.com/graphql \
-            --header "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
+            --header "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
             --header "Content-Type: application/json" \
             --data "$CLEAR_FIELD_DATA")
 
