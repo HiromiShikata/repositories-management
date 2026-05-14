@@ -32,7 +32,6 @@ on:
 env:
   unread: Unread
   in_progress: In Progress
-  gh_project_token: ${{ secrets.GH_TOKEN }}
   user: HiromiShikata
   project_id: 48
   project_v2_id: PVT_kwHOAGJHa84AFWnr
@@ -44,18 +43,25 @@ jobs:
     if: (github.event_name != 'issue_comment' || github.event.comment.user.login != 'umino-bot') && github.event.action != 'labeled'
     runs-on: ubuntu-latest
     steps:
+      - name: Generate hs-bot-gh-ap installation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.HS_BOT_GH_AP_APP_ID }}
+          private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
+          owner: HiromiShikata
       - name: Move issue to ${{ env.unread }}
         uses: leonsteinhaeuser/project-beta-automations@v2.2.1
         with:
-          gh_token: ${{ env.gh_project_token }}
+          gh_token: ${{ steps.app-token.outputs.token }}
           user: ${{ env.user }}
           project_id: ${{ env.project_id }}
           resource_node_id: ${{ github.event.pull_request.node_id || github.event.issue.node_id }}
           status_value: ${{ env.unread }}
         if: >-
-          (github.event_name == 'issues' && github.event.issue.state == 'open') || 
+          (github.event_name == 'issues' && github.event.issue.state == 'open') ||
           (github.event_name == 'pull_request' && github.event.pull_request.state == 'open') &&
-          (github.event.action == 'opened' || github.event.action == 'reopened' || 
+          (github.event.action == 'opened' || github.event.action == 'reopened' ||
           github.event.action == 'assigned' || github.event.action == 'unassigned')
       - run: |
           OWNER=$(echo ${{ github.repository }} | cut -d '/' -f 1)
@@ -64,7 +70,7 @@ jobs:
           NUMBER=$(echo ${{ github.event_name }} | grep -q "pull_request" && echo ${{ github.event.pull_request.number }} || echo ${{ github.event.issue.number }})
 
           QUERY_DATA='{ "query": "query { repository(owner: \"'$OWNER'\", name: \"'$REPO'\") { '${ENTITY_TYPE}'(number: '$NUMBER') { projectItems(first: 10) { nodes { id } } } } }" }'
-          RESPONSE=$(curl -X POST -H "Authorization: bearer ${{ secrets.GH_TOKEN }}" -H "Content-Type: application/json" --data "$QUERY_DATA" https://api.github.com/graphql)
+          RESPONSE=$(curl -X POST -H "Authorization: bearer ${{ steps.app-token.outputs.token }}" -H "Content-Type: application/json" --data "$QUERY_DATA" https://api.github.com/graphql)
 
           if echo $RESPONSE | grep -q "errors"; then
             echo "Error in GraphQL query"
@@ -86,7 +92,7 @@ jobs:
           CLEAR_FIELD_DATA="{\"query\":\"mutation { clearProjectV2ItemFieldValue(input: {projectId: \\\"${{ env.project_v2_id }}\\\", fieldId: \\\"${{ env.field_id }}\\\", itemId: \\\"$ITEM_ID\\\"}) { clientMutationId }}\"}"
           CLEAR_RESPONSE=$(curl --request POST \
             --url https://api.github.com/graphql \
-            --header "Authorization: Bearer ${{ env.gh_project_token }}" \
+            --header "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
             --header "Content-Type: application/json" \
             --data "$CLEAR_FIELD_DATA")
 
@@ -105,7 +111,7 @@ jobs:
         if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && github.event.comment.user.login == 'HiromiShikata' && contains(github.event.comment.body, '/createissue') }}
         uses: actions/github-script@v9
         with:
-          github-token: ${{secrets.GH_TOKEN}}
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const commentBody = context.payload.comment.body;
             const commandMatch = /(^|\n)\s*\/createissue\b/m.exec(commentBody);
@@ -130,7 +136,7 @@ jobs:
         if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && github.event.comment.user.login == 'HiromiShikata' && (contains(github.event.comment.body, '/close') || contains(github.event.comment.body, '/done')) }}
         uses: actions/github-script@v9
         with:
-          github-token: ${{secrets.GH_TOKEN}}
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const body = context.payload.comment.body;
             if (!/(^|\n)\s*\/(close|done)\b/m.test(body)) return;
@@ -147,7 +153,7 @@ jobs:
           PROJECT_V2_ID: ${{ env.project_v2_id }}
           FIELD_ID: ${{ env.field_id }}
         with:
-          github-token: ${{ secrets.GH_TOKEN }}
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const commentBody = context.payload.comment.body;
             const commandMatch = /(^|\n)\s*\/movenextactiondateto\b/m.exec(commentBody);
@@ -182,7 +188,7 @@ jobs:
         if: ${{ github.event_name == 'issue_comment' && github.event.action == 'created' && github.event.comment.user.login == 'HiromiShikata' && contains(github.event.comment.body, '/changeassignee ') }}
         uses: actions/github-script@v9
         with:
-          github-token: ${{secrets.GH_TOKEN}}
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const commentBody = context.payload.comment.body;
             const commandMatch = /(^|\n)\s*\/changeassignee\s+(\S+)/m.exec(commentBody);
@@ -201,7 +207,7 @@ jobs:
         uses: pozil/auto-assign-issue@v3.0.0
         with:
           assignees: HiromiShikata
-          repo-token: ${{ secrets.GH_TOKEN }}
+          repo-token: ${{ steps.app-token.outputs.token }}
       - name: Auto assign PR to owner
         if: >-
           github.event_name == 'pull_request' &&
@@ -209,7 +215,7 @@ jobs:
         uses: pozil/auto-assign-issue@v3.0.0
         with:
           assignees: HiromiShikata
-          repo-token: ${{ secrets.GH_TOKEN }}
+          repo-token: ${{ steps.app-token.outputs.token }}
 
   check_pull_requests_to_link_issues:
     runs-on: ubuntu-latest
@@ -217,12 +223,19 @@ jobs:
     if: >-
       (github.event_name == 'pull_request')
     steps:
+      - name: Generate hs-bot-gh-ap installation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.HS_BOT_GH_AP_APP_ID }}
+          private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
+          owner: HiromiShikata
       - uses: nearform-actions/github-action-check-linked-issues@v1
         id: check-linked-issues
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         with:
           exclude-branches: 'release/**, dependabot/**, project-common/**, renovate/**'
-          github-token: ${{ secrets.GH_TOKEN }}
+          github-token: ${{ steps.app-token.outputs.token }}
           loose-matching: true
           skip-linked-issues-check-label: ''
       - name: Get the output

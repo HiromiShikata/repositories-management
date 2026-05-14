@@ -15,9 +15,16 @@ jobs:
   add-to-project:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate hs-bot-gh-ap installation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.HS_BOT_GH_AP_APP_ID }}
+          private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
+          owner: HiromiShikata
       - name: Add to Project
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           ISSUE_OR_PR_URL="${{ github.event.inputs.issue_or_pr_url }}"
           ISSUE_OR_PR_URL="${ISSUE_OR_PR_URL%%\?*}"
