@@ -12,6 +12,7 @@ on:
       - main
     paths:
       - '.github/workflows/**'
+      - '.github/dependabot.yml'
       - 'labels.yaml'
       - 'renovate.json'
   workflow_dispatch:
@@ -55,6 +56,7 @@ jobs:
             ".github/CODEOWNERS"
             ".github/copilot-instructions.md"
             ".github/instructions/code-review.instructions.md"
+            ".github/dependabot.yml"
             "renovate.json"
             )
           for REPO in $REPO_LIST; do
