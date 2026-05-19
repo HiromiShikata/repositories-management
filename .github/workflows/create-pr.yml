@@ -22,7 +22,14 @@ jobs:
 
       - name: Set branch name as output
         id: branch_name
-        run: echo "branch=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          if [[ "$BRANCH" =~ ^i([0-9]+)$ ]]; then
+            echo "close_issue=- close #${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "close_issue=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Check if PR already exists
         id: check_pr
@@ -44,6 +51,7 @@ jobs:
           pr_body: |
             :magic_wand: :sparkles:
 
+            ${{ steps.branch_name.outputs.close_issue }}
           pr_draft: false
 
       - name: Resolve PR number
