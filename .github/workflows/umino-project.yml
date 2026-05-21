@@ -83,8 +83,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         if: >-
-          (github.event_name == 'issues' && github.event.issue.state == 'open') ||
-          (github.event_name == 'pull_request' && github.event.pull_request.state == 'open') &&
+          ((github.event_name == 'issues' && github.event.issue.state == 'open') ||
+          (github.event_name == 'pull_request' && github.event.pull_request.state == 'open')) &&
           (github.event.action == 'opened' || github.event.action == 'reopened' ||
           github.event.action == 'assigned' || github.event.action == 'unassigned')
       - run: |
