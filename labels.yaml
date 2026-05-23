@@ -113,6 +113,11 @@
   aliases: []
   description: ''
   delete: false
+- name: llm-agent:pr-handover-review
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
 - name: llm-model:claude-opus-4-7
   color: '#0E8A16'
   aliases:
