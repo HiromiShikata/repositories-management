@@ -53,11 +53,13 @@ jobs:
             ".github/workflows/configs/commitlint.config.js"
             ".github/workflows/create-pr.yml"
             ".github/workflows/api-created_issue_pr.yml"
+            ".github/workflows/secret-scan.yml"
             ".github/CODEOWNERS"
             ".github/copilot-instructions.md"
             ".github/instructions/code-review.instructions.md"
             ".github/dependabot.yml"
             "renovate.json"
+            ".gitleaks.toml"
             )
           for REPO in $REPO_LIST; do
             echo "REPO: $REPO"
