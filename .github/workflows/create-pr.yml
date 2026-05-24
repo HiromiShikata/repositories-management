@@ -35,7 +35,7 @@ jobs:
       - name: Create Pull Request
         id: create_pr
         if: steps.check_pr.outputs.existing_pr == ''
-        uses: repo-sync/pull-request@v2
+        uses: repo-sync/pull-request@7e79a9f5dc3ad0ce53138f01df2fad14a04831c5
         with:
           github_token: ${{ steps.app-token.outputs.token }}
           destination_branch: 'main'
