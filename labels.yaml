@@ -108,6 +108,11 @@
   aliases: []
   description: ''
   delete: false
+- name: llm-agent:story-driver
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
 - name: llm-model:claude-opus-4-7
   color: '#0E8A16'
   aliases:
