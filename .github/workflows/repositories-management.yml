@@ -152,6 +152,8 @@ jobs:
             echo "REPO: $REPO"
             gh secret set HS_BOT_GH_AP_APP_ID --body "$HS_BOT_GH_AP_APP_ID" -R "$ORG_NAME/$REPO"
             gh secret set HS_BOT_GH_AP_PRIVATE_KEY --body "$HS_BOT_GH_AP_PRIVATE_KEY" -R "$ORG_NAME/$REPO"
+            gh secret set HS_BOT_GH_AP_APP_ID --app dependabot --body "$HS_BOT_GH_AP_APP_ID" -R "$ORG_NAME/$REPO"
+            gh secret set HS_BOT_GH_AP_PRIVATE_KEY --app dependabot --body "$HS_BOT_GH_AP_PRIVATE_KEY" -R "$ORG_NAME/$REPO"
           done
 
   repository-config:
