@@ -27,6 +27,9 @@ jobs:
     env:
       GH_BOT_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
+      - uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - uses: actions/checkout@v6
       - run: |
           sudo apt-get update
@@ -123,6 +126,9 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
+      - uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -144,6 +150,9 @@ jobs:
       HS_BOT_GH_AP_APP_ID: ${{ secrets.HS_BOT_GH_AP_APP_ID }}
       HS_BOT_GH_AP_PRIVATE_KEY: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
     steps:
+      - uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Upsert hs-bot-gh-ap App credentials to all non-archived repos
         run: |
           ORG_NAME="${{ env.ORG_NAME }}"
@@ -159,6 +168,9 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
+      - uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
       - name: Update repository settings for all repositories
         run: |
           ORG_NAME="${{ env.ORG_NAME }}"
