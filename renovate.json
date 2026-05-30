@@ -10,6 +10,7 @@
   "dependencyDashboard": false,
   "branchConcurrentLimit": 2,
   "ignorePaths": ["**/generated/*", "**/_gen/*"],
+  "osvVulnerabilityAlerts": true,
   "packageRules": [
     {
       "matchPackageNames": ["eslint"],
