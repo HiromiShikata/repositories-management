@@ -40,7 +40,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.HS_BOT_GH_AP_APP_ID }}
+          client-id: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
           private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
           owner: HiromiShikata
       - name: Sync Files to All repositories
@@ -148,6 +148,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
       HS_BOT_GH_AP_APP_ID: ${{ secrets.HS_BOT_GH_AP_APP_ID }}
+      HS_BOT_GH_AP_CLIENT_ID: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
       HS_BOT_GH_AP_PRIVATE_KEY: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
     steps:
       - uses: step-security/harden-runner@v2
@@ -160,6 +161,7 @@ jobs:
           for REPO in $REPO_LIST; do
             echo "REPO: $REPO"
             gh secret set HS_BOT_GH_AP_APP_ID --body "$HS_BOT_GH_AP_APP_ID" -R "$ORG_NAME/$REPO"
+            gh secret set HS_BOT_GH_AP_CLIENT_ID --body "$HS_BOT_GH_AP_CLIENT_ID" -R "$ORG_NAME/$REPO"
             gh secret set HS_BOT_GH_AP_PRIVATE_KEY --body "$HS_BOT_GH_AP_PRIVATE_KEY" -R "$ORG_NAME/$REPO"
             gh secret set HS_BOT_GH_AP_APP_ID --app dependabot --body "$HS_BOT_GH_AP_APP_ID" -R "$ORG_NAME/$REPO"
             gh secret set HS_BOT_GH_AP_PRIVATE_KEY --app dependabot --body "$HS_BOT_GH_AP_PRIVATE_KEY" -R "$ORG_NAME/$REPO"
