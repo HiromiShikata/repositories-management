@@ -4,6 +4,10 @@
 # Update the source file in HiromiShikata/repositories-management instead.
 
 name: UMINO Project
+
+permissions:
+  contents: read
+
 on:
   issues:
     types:
