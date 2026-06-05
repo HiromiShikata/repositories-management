@@ -74,6 +74,7 @@ jobs:
         run: |
           RESOURCE_NODE_ID="${{ github.event.pull_request.node_id || github.event.issue.node_id }}"
           PROJECT_V2_ID="${{ env.project_v2_id }}"
+          EVENT_NAME="$GITHUB_EVENT_NAME_FOR_TITLE_CHECK"
 
           ADD_RESPONSE=$(gh api graphql \
             -f query='mutation($projectId:ID!,$contentId:ID!){addProjectV2ItemById(input:{projectId:$projectId,contentId:$contentId}){item{id}}}' \
@@ -94,14 +95,32 @@ jobs:
             exit 1
           fi
 
+          STATUS_OPTION_ID="f75ad846"
+          SET_STORY_ROUTINE="false"
+          if [ "$EVENT_NAME" = "issues" ] && printf '%s' "$ISSUE_TITLE" | grep -q 'Freee取引登録依頼'; then
+            STATUS_OPTION_ID="d1c19cce"
+            SET_STORY_ROUTINE="true"
+          fi
+
           gh api graphql \
             -f query='mutation($projectId:ID!,$itemId:ID!,$fieldId:ID!,$optionId:String!){updateProjectV2ItemFieldValue(input:{projectId:$projectId,itemId:$itemId,fieldId:$fieldId,value:{singleSelectOptionId:$optionId}}){projectV2Item{id}}}' \
             -f projectId="$PROJECT_V2_ID" \
             -f itemId="$ITEM_ID" \
             -f fieldId="PVTSSF_lAHOAGJHa84AFWnrzgDFcxE" \
-            -f optionId="f75ad846"
+            -f optionId="$STATUS_OPTION_ID"
+
+          if [ "$SET_STORY_ROUTINE" = "true" ]; then
+            gh api graphql \
+              -f query='mutation($projectId:ID!,$itemId:ID!,$fieldId:ID!,$optionId:String!){updateProjectV2ItemFieldValue(input:{projectId:$projectId,itemId:$itemId,fieldId:$fieldId,value:{singleSelectOptionId:$optionId}}){projectV2Item{id}}}' \
+              -f projectId="$PROJECT_V2_ID" \
+              -f itemId="$ITEM_ID" \
+              -f fieldId="PVTSSF_lAHOAGJHa84AFWnrzgf7v0k" \
+              -f optionId="e67fe568"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_EVENT_NAME_FOR_TITLE_CHECK: ${{ github.event_name }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
         if: >-
           ((github.event_name == 'issues' && github.event.issue.state == 'open') ||
           (github.event_name == 'pull_request' && github.event.pull_request.state == 'open')) &&
