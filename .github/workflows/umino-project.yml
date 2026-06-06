@@ -75,24 +75,32 @@ jobs:
           RESOURCE_NODE_ID="${{ github.event.pull_request.node_id || github.event.issue.node_id }}"
           PROJECT_V2_ID="${{ env.project_v2_id }}"
 
+          echo "RESOURCE_NODE_ID=$RESOURCE_NODE_ID"
+          echo "PROJECT_V2_ID=$PROJECT_V2_ID"
+
           ADD_RESPONSE=$(gh api graphql \
             -f query='mutation($projectId:ID!,$contentId:ID!){addProjectV2ItemById(input:{projectId:$projectId,contentId:$contentId}){item{id}}}' \
             -f projectId="$PROJECT_V2_ID" \
             -f contentId="$RESOURCE_NODE_ID" 2>&1 || true)
 
+          echo "addProjectV2ItemById response: $ADD_RESPONSE"
+
           ITEM_ID=$(echo "$ADD_RESPONSE" | jq -r '.data.addProjectV2ItemById.item.id // empty' 2>/dev/null || echo "")
 
           if [ -z "$ITEM_ID" ]; then
-            ITEM_ID=$(gh api graphql \
+            FALLBACK_RESPONSE=$(gh api graphql \
               -f query='query($nodeId:ID!){node(id:$nodeId){...on PullRequest{projectItems(first:10){nodes{id project{id}}}}...on Issue{projectItems(first:10){nodes{id project{id}}}}}}' \
-              -f nodeId="$RESOURCE_NODE_ID" \
-              --jq ".data.node.projectItems.nodes[] | select(.project.id == \"$PROJECT_V2_ID\") | .id")
+              -f nodeId="$RESOURCE_NODE_ID" 2>&1 || true)
+            echo "projectItems fallback response: $FALLBACK_RESPONSE"
+            ITEM_ID=$(echo "$FALLBACK_RESPONSE" | jq -r ".data.node.projectItems.nodes[]? | select(.project.id == \"$PROJECT_V2_ID\") | .id" 2>/dev/null || echo "")
           fi
 
           if [ -z "$ITEM_ID" ]; then
-            echo "Failed to resolve project item ID"
+            echo "Failed to resolve project item ID for $RESOURCE_NODE_ID in project $PROJECT_V2_ID"
             exit 1
           fi
+
+          echo "Resolved ITEM_ID=$ITEM_ID"
 
           gh api graphql \
             -f query='mutation($projectId:ID!,$itemId:ID!,$fieldId:ID!,$optionId:String!){updateProjectV2ItemFieldValue(input:{projectId:$projectId,itemId:$itemId,fieldId:$fieldId,value:{singleSelectOptionId:$optionId}}){projectV2Item{id}}}' \
@@ -101,7 +109,7 @@ jobs:
             -f fieldId="PVTSSF_lAHOAGJHa84AFWnrzgDFcxE" \
             -f optionId="f75ad846"
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         if: >-
           ((github.event_name == 'issues' && github.event.issue.state == 'open') ||
           (github.event_name == 'pull_request' && github.event.pull_request.state == 'open')) &&
@@ -114,7 +122,7 @@ jobs:
           NUMBER=$(echo ${{ github.event_name }} | grep -q "pull_request" && echo ${{ github.event.pull_request.number }} || echo ${{ github.event.issue.number }})
 
           QUERY_DATA='{ "query": "query { repository(owner: \"'$OWNER'\", name: \"'$REPO'\") { '${ENTITY_TYPE}'(number: '$NUMBER') { projectItems(first: 10) { nodes { id } } } } }" }'
-          RESPONSE=$(curl -X POST -H "Authorization: bearer ${{ secrets.GH_TOKEN }}" -H "Content-Type: application/json" --data "$QUERY_DATA" https://api.github.com/graphql)
+          RESPONSE=$(curl -X POST -H "Authorization: bearer ${{ steps.app-token.outputs.token }}" -H "Content-Type: application/json" --data "$QUERY_DATA" https://api.github.com/graphql)
 
           if echo $RESPONSE | grep -q "errors"; then
             echo "Error in GraphQL query"
@@ -136,7 +144,7 @@ jobs:
           CLEAR_FIELD_DATA="{\"query\":\"mutation { clearProjectV2ItemFieldValue(input: {projectId: \\\"${{ env.project_v2_id }}\\\", fieldId: \\\"${{ env.field_id }}\\\", itemId: \\\"$ITEM_ID\\\"}) { clientMutationId }}\"}"
           CLEAR_RESPONSE=$(curl --request POST \
             --url https://api.github.com/graphql \
-            --header "Authorization: Bearer ${{ secrets.GH_TOKEN }}" \
+            --header "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
             --header "Content-Type: application/json" \
             --data "$CLEAR_FIELD_DATA")
 
