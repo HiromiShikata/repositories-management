@@ -99,8 +99,10 @@ jobs:
             git diff
             git add .
             git diff --staged --quiet && { echo "No changes in $REPO"; cd ..; rm -rf $REPO; continue; }
-            MEANINGFUL_DIFF=$(git diff --staged | grep '^[+-]' | grep -v '^+++ \|^--- ' | sed "s/[\"']/Q/g" | sed 's/^[+-]//' | sort | uniq -c | awk '$1 % 2 != 0 {print}')
-            if [ -z "$MEANINGFUL_DIFF" ]; then
+            STAGED_DIFF=$(git diff --staged)
+            REMOVED_NORMALIZED=$(echo "$STAGED_DIFF" | grep '^-' | grep -v '^--- ' | sed 's/^-//' | sed "s/[\"']/Q/g" | sort)
+            ADDED_NORMALIZED=$(echo "$STAGED_DIFF" | grep '^+' | grep -v '^+++ ' | sed 's/^+//' | sed "s/[\"']/Q/g" | sort)
+            if [ "$REMOVED_NORMALIZED" = "$ADDED_NORMALIZED" ]; then
               echo "Only whitespace/quote-style changes in $REPO, skipping"
               cd ..; rm -rf $REPO; continue
             fi
