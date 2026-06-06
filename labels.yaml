@@ -78,42 +78,7 @@
   aliases: []
   description: ''
   delete: false
-- name: llm-agent:impl-plan
-  color: '#0E8A16'
-  aliases: []
-  description: ''
-  delete: false
-- name: llm-agent:review
-  color: '#0E8A16'
-  aliases: []
-  description: ''
-  delete: false
-- name: llm-agent:accounting
-  color: '#0E8A16'
-  aliases: []
-  description: ''
-  delete: false
-- name: llm-agent:deep-research
-  color: '#0E8A16'
-  aliases: []
-  description: ''
-  delete: false
-- name: llm-agent:chore
-  color: '#0E8A16'
-  aliases: []
-  description: ''
-  delete: false
-- name: llm-agent:browser
-  color: '#0E8A16'
-  aliases: []
-  description: ''
-  delete: false
-- name: llm-agent:story-driver
-  color: '#0E8A16'
-  aliases: []
-  description: ''
-  delete: false
-- name: llm-agent:pr-handover-review
+- name: chore
   color: '#0E8A16'
   aliases: []
   description: ''
