@@ -96,18 +96,17 @@ jobs:
           fi
 
           if [ -z "$ITEM_ID" ]; then
-            echo "Failed to resolve project item ID for $RESOURCE_NODE_ID in project $PROJECT_V2_ID"
-            exit 1
+            echo "WARNING: Could not resolve project item ID for $RESOURCE_NODE_ID in project $PROJECT_V2_ID. The GitHub App may lack projects:write permission. Skipping status update."
+          else
+            echo "Resolved ITEM_ID=$ITEM_ID"
+
+            gh api graphql \
+              -f query='mutation($projectId:ID!,$itemId:ID!,$fieldId:ID!,$optionId:String!){updateProjectV2ItemFieldValue(input:{projectId:$projectId,itemId:$itemId,fieldId:$fieldId,value:{singleSelectOptionId:$optionId}}){projectV2Item{id}}}' \
+              -f projectId="$PROJECT_V2_ID" \
+              -f itemId="$ITEM_ID" \
+              -f fieldId="PVTSSF_lAHOAGJHa84AFWnrzgDFcxE" \
+              -f optionId="f75ad846"
           fi
-
-          echo "Resolved ITEM_ID=$ITEM_ID"
-
-          gh api graphql \
-            -f query='mutation($projectId:ID!,$itemId:ID!,$fieldId:ID!,$optionId:String!){updateProjectV2ItemFieldValue(input:{projectId:$projectId,itemId:$itemId,fieldId:$fieldId,value:{singleSelectOptionId:$optionId}}){projectV2Item{id}}}' \
-            -f projectId="$PROJECT_V2_ID" \
-            -f itemId="$ITEM_ID" \
-            -f fieldId="PVTSSF_lAHOAGJHa84AFWnrzgDFcxE" \
-            -f optionId="f75ad846"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         if: >-
@@ -125,33 +124,30 @@ jobs:
           RESPONSE=$(curl -X POST -H "Authorization: bearer ${{ steps.app-token.outputs.token }}" -H "Content-Type: application/json" --data "$QUERY_DATA" https://api.github.com/graphql)
 
           if echo $RESPONSE | grep -q "errors"; then
-            echo "Error in GraphQL query"
+            echo "WARNING: Error in GraphQL query for project items. The GitHub App may lack projects:write permission. Skipping nextactiondate clear."
             echo "GraphQL Response: $RESPONSE"
-            exit 1
-          fi
-
-          if [ "$ENTITY_TYPE" = "pullRequest" ]; then
-            ITEM_ID=$(echo $RESPONSE | jq -r '.data.repository.pullRequest.projectItems.nodes[0].id')
           else
-            ITEM_ID=$(echo $RESPONSE | jq -r '.data.repository.issue.projectItems.nodes[0].id')
-          fi
+            if [ "$ENTITY_TYPE" = "pullRequest" ]; then
+              ITEM_ID=$(echo $RESPONSE | jq -r '.data.repository.pullRequest.projectItems.nodes[0].id')
+            else
+              ITEM_ID=$(echo $RESPONSE | jq -r '.data.repository.issue.projectItems.nodes[0].id')
+            fi
 
-          if [ "$ITEM_ID" = "null" ] || [ -z "$ITEM_ID" ]; then
-            echo "No valid item ID found, cannot proceed"
-            exit 1
-          fi
+            if [ "$ITEM_ID" = "null" ] || [ -z "$ITEM_ID" ]; then
+              echo "WARNING: No valid item ID found, skipping nextactiondate clear"
+            else
+              CLEAR_FIELD_DATA="{\"query\":\"mutation { clearProjectV2ItemFieldValue(input: {projectId: \\\"${{ env.project_v2_id }}\\\", fieldId: \\\"${{ env.field_id }}\\\", itemId: \\\"$ITEM_ID\\\"}) { clientMutationId }}\"}"
+              CLEAR_RESPONSE=$(curl --request POST \
+                --url https://api.github.com/graphql \
+                --header "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
+                --header "Content-Type: application/json" \
+                --data "$CLEAR_FIELD_DATA")
 
-          CLEAR_FIELD_DATA="{\"query\":\"mutation { clearProjectV2ItemFieldValue(input: {projectId: \\\"${{ env.project_v2_id }}\\\", fieldId: \\\"${{ env.field_id }}\\\", itemId: \\\"$ITEM_ID\\\"}) { clientMutationId }}\"}"
-          CLEAR_RESPONSE=$(curl --request POST \
-            --url https://api.github.com/graphql \
-            --header "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
-            --header "Content-Type: application/json" \
-            --data "$CLEAR_FIELD_DATA")
-
-          if echo $CLEAR_RESPONSE | grep -q "errors"; then
-            echo "Error in clearing field"
-            echo "Clear Field Response: $CLEAR_RESPONSE"
-            exit 1
+              if echo $CLEAR_RESPONSE | grep -q "errors"; then
+                echo "WARNING: Error in clearing nextactiondate field"
+                echo "Clear Field Response: $CLEAR_RESPONSE"
+              fi
+            fi
           fi
         if: >-
           ((github.event_name == 'issues' && github.event.issue.state == 'open') ||
