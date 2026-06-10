@@ -96,6 +96,10 @@ jobs:
           fi
 
           if [ -z "$ITEM_ID" ]; then
+            if echo "$ADD_RESPONSE" | jq -e '.errors[]? | select(.type == "FORBIDDEN")' > /dev/null 2>&1; then
+              echo "Warning: Bot lacks Projects permission (FORBIDDEN). Skipping project item update."
+              exit 0
+            fi
             echo "Failed to resolve project item ID for $RESOURCE_NODE_ID in project $PROJECT_V2_ID"
             exit 1
           fi
@@ -137,8 +141,8 @@ jobs:
           fi
 
           if [ "$ITEM_ID" = "null" ] || [ -z "$ITEM_ID" ]; then
-            echo "No valid item ID found, cannot proceed"
-            exit 1
+            echo "Warning: No project item found for this PR/issue. Skipping field clear."
+            exit 0
           fi
 
           CLEAR_FIELD_DATA="{\"query\":\"mutation { clearProjectV2ItemFieldValue(input: {projectId: \\\"${{ env.project_v2_id }}\\\", fieldId: \\\"${{ env.field_id }}\\\", itemId: \\\"$ITEM_ID\\\"}) { clientMutationId }}\"}"
