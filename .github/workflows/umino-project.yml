@@ -96,7 +96,7 @@ jobs:
           fi
 
           if [ -z "$ITEM_ID" ]; then
-            if echo "$ADD_RESPONSE" | jq -e '.errors[]? | select(.type == "FORBIDDEN")' > /dev/null 2>&1; then
+            if echo "$ADD_RESPONSE" | grep -q '"FORBIDDEN"'; then
               echo "Warning: Bot lacks Projects permission (FORBIDDEN). Skipping project item update."
               exit 0
             fi
