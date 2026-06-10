@@ -96,8 +96,8 @@ jobs:
           fi
 
           if [ -z "$ITEM_ID" ]; then
-            echo "Failed to resolve project item ID for $RESOURCE_NODE_ID in project $PROJECT_V2_ID"
-            exit 1
+            echo "Warning: Could not resolve project item ID for $RESOURCE_NODE_ID in project $PROJECT_V2_ID. The item may not be accessible by this integration. Skipping status update."
+            exit 0
           fi
 
           echo "Resolved ITEM_ID=$ITEM_ID"
@@ -137,8 +137,8 @@ jobs:
           fi
 
           if [ "$ITEM_ID" = "null" ] || [ -z "$ITEM_ID" ]; then
-            echo "No valid item ID found, cannot proceed"
-            exit 1
+            echo "Warning: No valid item ID found in project. The item may not be in the project or may not be accessible by this integration. Skipping field clear."
+            exit 0
           fi
 
           CLEAR_FIELD_DATA="{\"query\":\"mutation { clearProjectV2ItemFieldValue(input: {projectId: \\\"${{ env.project_v2_id }}\\\", fieldId: \\\"${{ env.field_id }}\\\", itemId: \\\"$ITEM_ID\\\"}) { clientMutationId }}\"}"
