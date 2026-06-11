@@ -115,7 +115,8 @@ jobs:
             git remote -v
             git remote show origin
             git push origin $BRANCH_NAME
-            PR_URL=$(GH_TOKEN=$APP_TOKEN gh pr create --head $BRANCH_NAME --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK")
+            PR_OUTPUT=$(GH_TOKEN=$APP_TOKEN gh pr create --head $BRANCH_NAME --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK" 2>&1) || { echo "Warning: Failed to create PR for $REPO (skipping): $PR_OUTPUT"; cd ..; rm -rf $REPO; continue; }
+            PR_URL="$PR_OUTPUT"
             echo "PR_URL: $PR_URL"
             GH_TOKEN=$GH_BOT_TOKEN gh pr review --approve "$PR_URL"
             cd ..
