@@ -126,7 +126,7 @@
   color: '#0E8A16'
   aliases: []
   description: ''
-  delete: true
+  delete: false
 - name: category:deep-research
   color: '#0E8A16'
   aliases: []
