@@ -76,6 +76,15 @@ jobs:
       - name: Enable Auto Merge for PR
         if: steps.resolve_pr.outputs.pr_number
         run: |
+          REPO_SETTINGS=$(curl -s \
+            -H "Authorization: token ${{ steps.app-token.outputs.token }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}")
+          AUTO_MERGE_ALLOWED=$(echo "$REPO_SETTINGS" | jq -r '.allow_auto_merge')
+          if [ "$AUTO_MERGE_ALLOWED" != "true" ]; then
+            echo "Auto-merge is not enabled for this repository. Skipping auto-merge enablement."
+            exit 0
+          fi
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: bearer ${{ steps.app-token.outputs.token }}" \
             -H "Content-Type: application/json" \
