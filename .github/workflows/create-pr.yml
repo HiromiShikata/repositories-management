@@ -80,7 +80,7 @@ jobs:
             -H "Authorization: bearer ${{ steps.app-token.outputs.token }}" \
             -H "Content-Type: application/json" \
             -d '{
-              "query": "mutation($id: ID!) { enablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }",
+              "query": "mutation($id: ID!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH }) { clientMutationId } }",
               "variables": {
                 "id": "'"${{ steps.get_pr_id.outputs.node_id }}"'"
               }
