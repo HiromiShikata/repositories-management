@@ -23,6 +23,7 @@ env:
 
 jobs:
   update-repos:
+    needs: repository-config
     runs-on: ubuntu-latest
     env:
       GH_BOT_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -186,16 +187,16 @@ jobs:
           GH_BOT_TOKEN="${{ secrets.GH_TOKEN }}"
 
           for REPO in $REPO_LIST; do
-            echo "curl -f -X PATCH -H \"Authorization: token $GH_BOT_TOKEN\" -H \"Accept: application/vnd.github.v3+json\" \"https://api.github.com/repos/$ORG_NAME/$REPO\" -d '{ \"delete_branch_on_merge\": true, \"allow_auto_merge\": true, \"merge_commit_allowed\": true, \"allow_rebase_merge\": false, \"allow_squash_merge\": false }'"
+            echo "curl -f -X PATCH -H \"Authorization: token $GH_BOT_TOKEN\" -H \"Accept: application/vnd.github.v3+json\" \"https://api.github.com/repos/$ORG_NAME/$REPO\" -d '{ \"delete_branch_on_merge\": true, \"allow_auto_merge\": true, \"allow_merge_commit\": false, \"allow_rebase_merge\": false, \"allow_squash_merge\": true }'"
             RESPONSE=$(curl -X PATCH -H "Authorization: token $GH_BOT_TOKEN" \
                             -H "Accept: application/vnd.github.v3+json" \
                             "https://api.github.com/repos/$ORG_NAME/$REPO" \
                             -d '{
                                   "delete_branch_on_merge": true,
                                   "allow_auto_merge": true,
-                                  "merge_commit_allowed": true,
+                                  "allow_merge_commit": false,
                                   "allow_rebase_merge": false,
-                                  "allow_squash_merge": false
+                                  "allow_squash_merge": true
                                 }' -w "\n%{http_code}" -s)
             echo "$RESPONSE"
             HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
