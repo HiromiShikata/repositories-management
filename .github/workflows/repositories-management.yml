@@ -30,7 +30,7 @@ jobs:
       - uses: step-security/harden-runner@v2
         with:
           egress-policy: audit
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: |
           sudo apt-get update
           sudo apt-get install gh
@@ -133,7 +133,7 @@ jobs:
         with:
           egress-policy: audit
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install GitHub Label Sync
         run: npm install -g github-label-sync
