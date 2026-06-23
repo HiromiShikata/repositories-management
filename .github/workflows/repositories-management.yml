@@ -56,6 +56,7 @@ jobs:
             ".github/workflows/configs/commitlint.config.js"
             ".github/workflows/create-pr.yml"
             ".github/workflows/api-created_issue_pr.yml"
+            ".github/workflows/close-manual-prs.yml"
             ".github/workflows/secret-scan.yml"
             ".github/CODEOWNERS"
             ".github/copilot-instructions.md"
