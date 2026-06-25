@@ -53,7 +53,7 @@ jobs:
           FILES_TO_SYNC=(
             ".github/workflows/umino-project.yml"
             ".github/workflows/commit-lint.yml"
-            ".github/workflows/configs/commitlint.config.js"
+            ".github/workflows/configs/commitlint.config.cjs"
             ".github/workflows/create-pr.yml"
             ".github/workflows/api-created_issue_pr.yml"
             ".github/workflows/close-manual-prs.yml"
