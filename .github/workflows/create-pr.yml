@@ -40,6 +40,21 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
+      - name: Build PR body
+        id: pr_body
+        run: |
+          BRANCH="${{ steps.branch_name.outputs.branch }}"
+          if [[ "$BRANCH" =~ ^i([0-9]+) ]]; then
+            ISSUE_NUMBER="${BASH_REMATCH[1]}"
+            echo "body<<EOF" >> "$GITHUB_OUTPUT"
+            printf ':magic_wand: :sparkles:\n\nCloses #%s\n' "$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          else
+            echo "body<<EOF" >> "$GITHUB_OUTPUT"
+            echo ':magic_wand: :sparkles:' >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create Pull Request
         id: create_pr
         if: steps.check_pr.outputs.existing_pr == ''
@@ -49,9 +64,7 @@ jobs:
           destination_branch: 'main'
           source_branch: ''
           pr_title: '${{ steps.branch_name.outputs.branch }}'
-          pr_body: |
-            :magic_wand: :sparkles:
-
+          pr_body: ${{ steps.pr_body.outputs.body }}
           pr_draft: false
 
       - name: Resolve PR number
