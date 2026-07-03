@@ -53,6 +53,7 @@ jobs:
       github.actor != 'dependabot[bot]' &&
       github.actor != 'renovate[bot]' &&
       github.actor != 'app/dependabot' &&
+      github.actor != 'hs-bot-gh-app[bot]' &&
       ((github.event_name != 'issue_comment') ||
        (github.event.comment.user.login == 'HiromiShikata' &&
         (contains(github.event.comment.body, '/createissue') ||
