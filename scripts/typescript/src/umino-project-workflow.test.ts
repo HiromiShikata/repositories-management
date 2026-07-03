@@ -18,6 +18,13 @@ describe('umino-project.yml workflow', () => {
       const uminoJobBlock = workflowContent.slice(uminoJobStart, nextJob);
       expect(uminoJobBlock).toContain("github.actor != 'app/dependabot'");
     });
+
+    test('excludes hs-bot-gh-app[bot] actor', () => {
+      const uminoJobStart = workflowContent.indexOf('umino-job:');
+      const nextJob = workflowContent.indexOf('\n  check_', uminoJobStart);
+      const uminoJobBlock = workflowContent.slice(uminoJobStart, nextJob);
+      expect(uminoJobBlock).toContain("github.actor != 'hs-bot-gh-app[bot]'");
+    });
   });
 
   describe('check_pull_requests_to_link_issues job condition', () => {
