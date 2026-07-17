@@ -61,6 +61,13 @@ describe('umino-project.yml workflow', () => {
         "github.actor != 'hs-bot-gh-app[bot]'",
       );
     });
+
+    test('does not exclude hs-bot-gh-app[bot] at umino-job level', () => {
+      const uminoJobStart = workflowContent.indexOf('umino-job:');
+      const firstStepStart = workflowContent.indexOf('    steps:', uminoJobStart);
+      const jobConditionBlock = workflowContent.slice(uminoJobStart, firstStepStart);
+      expect(jobConditionBlock).not.toContain("github.actor != 'hs-bot-gh-app[bot]'");
+    });
   });
 
   describe('check-linked-issues step', () => {
