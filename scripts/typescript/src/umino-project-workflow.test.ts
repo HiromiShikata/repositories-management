@@ -42,6 +42,66 @@ describe('umino-project.yml workflow', () => {
       const checkJobBlock = workflowContent.slice(checkJobStart);
       expect(checkJobBlock).toContain("github.actor != 'app/dependabot'");
     });
+
+    test('skips opened event so impl agent can edit PR body before check runs', () => {
+      const checkJobStart = workflowContent.indexOf(
+        'check_pull_requests_to_link_issues:',
+      );
+      const checkJobStepsStart = workflowContent.indexOf(
+        '\n    steps:',
+        checkJobStart,
+      );
+      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      expect(jobIfBlock).not.toContain("github.event.action == 'opened'");
+    });
+
+    test('skips labeled event so impl agent can edit PR body before check runs', () => {
+      const checkJobStart = workflowContent.indexOf(
+        'check_pull_requests_to_link_issues:',
+      );
+      const checkJobStepsStart = workflowContent.indexOf(
+        '\n    steps:',
+        checkJobStart,
+      );
+      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      expect(jobIfBlock).not.toContain("github.event.action == 'labeled'");
+    });
+
+    test('runs on edited event after impl agent adds closing keyword to PR body', () => {
+      const checkJobStart = workflowContent.indexOf(
+        'check_pull_requests_to_link_issues:',
+      );
+      const checkJobStepsStart = workflowContent.indexOf(
+        '\n    steps:',
+        checkJobStart,
+      );
+      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      expect(jobIfBlock).toContain("github.event.action == 'edited'");
+    });
+
+    test('runs on synchronize event after impl agent pushes commits', () => {
+      const checkJobStart = workflowContent.indexOf(
+        'check_pull_requests_to_link_issues:',
+      );
+      const checkJobStepsStart = workflowContent.indexOf(
+        '\n    steps:',
+        checkJobStart,
+      );
+      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      expect(jobIfBlock).toContain("github.event.action == 'synchronize'");
+    });
+
+    test('runs on reopened event', () => {
+      const checkJobStart = workflowContent.indexOf(
+        'check_pull_requests_to_link_issues:',
+      );
+      const checkJobStepsStart = workflowContent.indexOf(
+        '\n    steps:',
+        checkJobStart,
+      );
+      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      expect(jobIfBlock).toContain("github.event.action == 'reopened'");
+    });
   });
 
   describe('check-linked-issues step', () => {
