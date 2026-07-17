@@ -44,6 +44,25 @@ describe('umino-project.yml workflow', () => {
     });
   });
 
+  describe('status revert steps condition', () => {
+    test('excludes hs-bot-gh-app[bot] actor for assigned and unassigned actions at step level', () => {
+      const moveToUnreadStepStart = workflowContent.indexOf(
+        '- name: Move issue to',
+      );
+      const createIssueStepStart = workflowContent.indexOf(
+        '- name: Create Issue',
+        moveToUnreadStepStart,
+      );
+      const statusRevertBlock = workflowContent.slice(
+        moveToUnreadStepStart,
+        createIssueStepStart,
+      );
+      expect(statusRevertBlock).toContain(
+        "github.actor != 'hs-bot-gh-app[bot]'",
+      );
+    });
+  });
+
   describe('check-linked-issues step', () => {
     test('step-level condition excludes dependabot[bot] PR user', () => {
       expect(workflowContent).toContain(
