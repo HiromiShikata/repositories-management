@@ -62,6 +62,23 @@ describe('umino-project.yml workflow', () => {
       );
     });
 
+    test('both status-revert steps each independently exclude hs-bot-gh-app[bot] actor', () => {
+      const moveToUnreadStepStart = workflowContent.indexOf(
+        '- name: Move issue to',
+      );
+      const createIssueStepStart = workflowContent.indexOf(
+        '- name: Create Issue',
+        moveToUnreadStepStart,
+      );
+      const statusRevertBlock = workflowContent.slice(
+        moveToUnreadStepStart,
+        createIssueStepStart,
+      );
+      const exclusion = "github.actor != 'hs-bot-gh-app[bot]'";
+      const count = statusRevertBlock.split(exclusion).length - 1;
+      expect(count).toBe(2);
+    });
+
     test('does not exclude hs-bot-gh-app[bot] at umino-job level', () => {
       const uminoJobStart = workflowContent.indexOf('umino-job:');
       const firstStepStart = workflowContent.indexOf('    steps:', uminoJobStart);
