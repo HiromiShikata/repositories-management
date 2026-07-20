@@ -85,7 +85,23 @@ jobs:
           echo "allowed=$ALLOW_AUTO_MERGE" >> "$GITHUB_OUTPUT"
           if [ "$ALLOW_AUTO_MERGE" != "true" ]; then
             echo "Repository has allow_auto_merge disabled. Skipping auto-merge enablement."
+            exit 0
           fi
+          ALLOW_SQUASH=$(echo "$REPO_DATA" | jq -r '.allow_squash_merge')
+          ALLOW_MERGE=$(echo "$REPO_DATA" | jq -r '.allow_merge_commit')
+          ALLOW_REBASE=$(echo "$REPO_DATA" | jq -r '.allow_rebase_merge')
+          if [ "$ALLOW_SQUASH" = "true" ]; then
+            MERGE_METHOD="SQUASH"
+          elif [ "$ALLOW_MERGE" = "true" ]; then
+            MERGE_METHOD="MERGE"
+          elif [ "$ALLOW_REBASE" = "true" ]; then
+            MERGE_METHOD="REBASE"
+          else
+            echo "No allowed merge method found in repository settings: allow_squash_merge=$ALLOW_SQUASH, allow_merge_commit=$ALLOW_MERGE, allow_rebase_merge=$ALLOW_REBASE"
+            exit 1
+          fi
+          echo "Detected merge method: $MERGE_METHOD"
+          echo "merge_method=$MERGE_METHOD" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
@@ -96,15 +112,16 @@ jobs:
             -H "Authorization: bearer ${{ steps.app-token.outputs.token }}" \
             -H "Content-Type: application/json" \
             -d "{
-              \"query\": \"mutation(\$id: ID!) { enablePullRequestAutoMerge(input: { pullRequestId: \$id, mergeMethod: SQUASH }) { clientMutationId } }\",
+              \"query\": \"mutation(\$id: ID!, \$mergeMethod: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: { pullRequestId: \$id, mergeMethod: \$mergeMethod }) { clientMutationId } }\",
               \"variables\": {
-                \"id\": \"${{ steps.get_pr_id.outputs.node_id }}\"
+                \"id\": \"${{ steps.get_pr_id.outputs.node_id }}\",
+                \"mergeMethod\": \"${{ steps.check_auto_merge.outputs.merge_method }}\"
               }
             }" \
             "https://api.github.com/graphql")
           echo "$RESPONSE"
           if echo "$RESPONSE" | jq -e '.errors' >/dev/null; then
-            echo "Failed to enable auto merge"
+            echo "Failed to enable auto merge with merge method ${{ steps.check_auto_merge.outputs.merge_method }}"
             exit 1
           fi
         env:
