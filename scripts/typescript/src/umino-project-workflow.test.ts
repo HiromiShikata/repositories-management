@@ -104,6 +104,49 @@ describe('umino-project.yml workflow', () => {
     });
   });
 
+  describe('status revert steps condition', () => {
+    test('excludes hs-bot-gh-app[bot] actor for assigned and unassigned actions at step level', () => {
+      const moveToUnreadStepStart = workflowContent.indexOf(
+        '- name: Move issue to',
+      );
+      const createIssueStepStart = workflowContent.indexOf(
+        '- name: Create Issue',
+        moveToUnreadStepStart,
+      );
+      const statusRevertBlock = workflowContent.slice(
+        moveToUnreadStepStart,
+        createIssueStepStart,
+      );
+      expect(statusRevertBlock).toContain(
+        "github.actor != 'hs-bot-gh-app[bot]'",
+      );
+    });
+
+    test('both status-revert steps each independently exclude hs-bot-gh-app[bot] actor', () => {
+      const moveToUnreadStepStart = workflowContent.indexOf(
+        '- name: Move issue to',
+      );
+      const createIssueStepStart = workflowContent.indexOf(
+        '- name: Create Issue',
+        moveToUnreadStepStart,
+      );
+      const statusRevertBlock = workflowContent.slice(
+        moveToUnreadStepStart,
+        createIssueStepStart,
+      );
+      const exclusion = "github.actor != 'hs-bot-gh-app[bot]'";
+      const count = statusRevertBlock.split(exclusion).length - 1;
+      expect(count).toBe(2);
+    });
+
+    test('does not exclude hs-bot-gh-app[bot] at umino-job level', () => {
+      const uminoJobStart = workflowContent.indexOf('umino-job:');
+      const firstStepStart = workflowContent.indexOf('    steps:', uminoJobStart);
+      const jobConditionBlock = workflowContent.slice(uminoJobStart, firstStepStart);
+      expect(jobConditionBlock).not.toContain("github.actor != 'hs-bot-gh-app[bot]'");
+    });
+  });
+
   describe('check-linked-issues step', () => {
     test('step-level condition excludes dependabot[bot] PR user', () => {
       expect(workflowContent).toContain(
