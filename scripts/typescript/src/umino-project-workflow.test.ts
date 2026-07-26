@@ -43,6 +43,20 @@ describe('umino-project.yml workflow', () => {
       expect(checkJobBlock).toContain("github.actor != 'app/dependabot'");
     });
 
+    test('job-level condition excludes dependabot[bot] PR author by user.login', () => {
+      const checkJobStart = workflowContent.indexOf(
+        'check_pull_requests_to_link_issues:',
+      );
+      const checkJobStepsStart = workflowContent.indexOf(
+        '\n    steps:',
+        checkJobStart,
+      );
+      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      expect(jobIfBlock).toContain(
+        "github.event.pull_request.user.login != 'dependabot[bot]'",
+      );
+    });
+
     test('skips opened event so impl agent can edit PR body before check runs', () => {
       const checkJobStart = workflowContent.indexOf(
         'check_pull_requests_to_link_issues:',
