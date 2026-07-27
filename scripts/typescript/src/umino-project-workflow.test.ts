@@ -51,7 +51,10 @@ describe('umino-project.yml workflow', () => {
         '\n    steps:',
         checkJobStart,
       );
-      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      const jobIfBlock = workflowContent.slice(
+        checkJobStart,
+        checkJobStepsStart,
+      );
       expect(jobIfBlock).toContain(
         "github.event.pull_request.user.login != 'dependabot[bot]'",
       );
@@ -65,7 +68,10 @@ describe('umino-project.yml workflow', () => {
         '\n    steps:',
         checkJobStart,
       );
-      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      const jobIfBlock = workflowContent.slice(
+        checkJobStart,
+        checkJobStepsStart,
+      );
       expect(jobIfBlock).not.toContain("github.event.action == 'opened'");
     });
 
@@ -77,7 +83,10 @@ describe('umino-project.yml workflow', () => {
         '\n    steps:',
         checkJobStart,
       );
-      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      const jobIfBlock = workflowContent.slice(
+        checkJobStart,
+        checkJobStepsStart,
+      );
       expect(jobIfBlock).not.toContain("github.event.action == 'labeled'");
     });
 
@@ -89,7 +98,10 @@ describe('umino-project.yml workflow', () => {
         '\n    steps:',
         checkJobStart,
       );
-      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      const jobIfBlock = workflowContent.slice(
+        checkJobStart,
+        checkJobStepsStart,
+      );
       expect(jobIfBlock).toContain("github.event.action == 'edited'");
     });
 
@@ -101,7 +113,10 @@ describe('umino-project.yml workflow', () => {
         '\n    steps:',
         checkJobStart,
       );
-      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      const jobIfBlock = workflowContent.slice(
+        checkJobStart,
+        checkJobStepsStart,
+      );
       expect(jobIfBlock).toContain("github.event.action == 'synchronize'");
     });
 
@@ -113,51 +128,119 @@ describe('umino-project.yml workflow', () => {
         '\n    steps:',
         checkJobStart,
       );
-      const jobIfBlock = workflowContent.slice(checkJobStart, checkJobStepsStart);
+      const jobIfBlock = workflowContent.slice(
+        checkJobStart,
+        checkJobStepsStart,
+      );
       expect(jobIfBlock).toContain("github.event.action == 'reopened'");
     });
   });
 
   describe('status revert steps condition', () => {
-    test('excludes hs-bot-gh-app[bot] actor for assigned and unassigned actions at step level', () => {
-      const moveToUnreadStepStart = workflowContent.indexOf(
-        '- name: Move issue to',
-      );
-      const createIssueStepStart = workflowContent.indexOf(
-        '- name: Create Issue',
-        moveToUnreadStepStart,
-      );
-      const statusRevertBlock = workflowContent.slice(
-        moveToUnreadStepStart,
-        createIssueStepStart,
-      );
-      expect(statusRevertBlock).toContain(
-        "github.actor != 'hs-bot-gh-app[bot]'",
+    const moveToUnreadStepStart = workflowContent.indexOf(
+      '- name: Move issue to',
+    );
+    const clearNextActionDateStepStart = workflowContent.indexOf(
+      '- run: |',
+      moveToUnreadStepStart,
+    );
+    const createIssueStepStart = workflowContent.indexOf(
+      '- name: Create Issue',
+      clearNextActionDateStepStart,
+    );
+    const moveToUnreadStepBlock = workflowContent.slice(
+      moveToUnreadStepStart,
+      clearNextActionDateStepStart,
+    );
+    const clearNextActionDateStepBlock = workflowContent.slice(
+      clearNextActionDateStepStart,
+      createIssueStepStart,
+    );
+    const moveToUnreadIfCondition = moveToUnreadStepBlock.slice(
+      moveToUnreadStepBlock.indexOf('if:'),
+    );
+    const clearNextActionDateIfCondition = clearNextActionDateStepBlock.slice(
+      clearNextActionDateStepBlock.indexOf('if:'),
+    );
+
+    test('move-to-unread step does not revert status on assigned action', () => {
+      expect(moveToUnreadIfCondition).not.toContain("'assigned'");
+    });
+
+    test('move-to-unread step does not revert status on unassigned action', () => {
+      expect(moveToUnreadIfCondition).not.toContain("'unassigned'");
+    });
+
+    test('move-to-unread step still fires on opened action', () => {
+      expect(moveToUnreadIfCondition).toContain(
+        "github.event.action == 'opened'",
       );
     });
 
-    test('both status-revert steps each independently exclude hs-bot-gh-app[bot] actor', () => {
-      const moveToUnreadStepStart = workflowContent.indexOf(
-        '- name: Move issue to',
+    test('move-to-unread step still fires on reopened action', () => {
+      expect(moveToUnreadIfCondition).toContain(
+        "github.event.action == 'reopened'",
       );
-      const createIssueStepStart = workflowContent.indexOf(
-        '- name: Create Issue',
-        moveToUnreadStepStart,
+    });
+
+    test('clear-next-action-date step does not revert status on assigned action', () => {
+      expect(clearNextActionDateIfCondition).not.toContain("'assigned'");
+    });
+
+    test('clear-next-action-date step does not revert status on unassigned action', () => {
+      expect(clearNextActionDateIfCondition).not.toContain("'unassigned'");
+    });
+
+    test('clear-next-action-date step still fires on opened action', () => {
+      expect(clearNextActionDateIfCondition).toContain(
+        "github.event.action == 'opened'",
       );
-      const statusRevertBlock = workflowContent.slice(
-        moveToUnreadStepStart,
-        createIssueStepStart,
+    });
+
+    test('clear-next-action-date step still fires on reopened action', () => {
+      expect(clearNextActionDateIfCondition).toContain(
+        "github.event.action == 'reopened'",
       );
-      const exclusion = "github.actor != 'hs-bot-gh-app[bot]'";
-      const count = statusRevertBlock.split(exclusion).length - 1;
-      expect(count).toBe(2);
     });
 
     test('does not exclude hs-bot-gh-app[bot] at umino-job level', () => {
       const uminoJobStart = workflowContent.indexOf('umino-job:');
-      const firstStepStart = workflowContent.indexOf('    steps:', uminoJobStart);
-      const jobConditionBlock = workflowContent.slice(uminoJobStart, firstStepStart);
-      expect(jobConditionBlock).not.toContain("github.actor != 'hs-bot-gh-app[bot]'");
+      const firstStepStart = workflowContent.indexOf(
+        '    steps:',
+        uminoJobStart,
+      );
+      const jobConditionBlock = workflowContent.slice(
+        uminoJobStart,
+        firstStepStart,
+      );
+      expect(jobConditionBlock).not.toContain(
+        "github.actor != 'hs-bot-gh-app[bot]'",
+      );
+    });
+  });
+
+  describe('workflow event triggers', () => {
+    const onSectionStart = workflowContent.indexOf('\non:');
+    const envSectionStart = workflowContent.indexOf('\nenv:', onSectionStart);
+    const onSection = workflowContent.slice(onSectionStart, envSectionStart);
+
+    test('does not trigger on assigned event', () => {
+      expect(onSection).not.toContain('- assigned');
+    });
+
+    test('does not trigger on unassigned event', () => {
+      expect(onSection).not.toContain('- unassigned');
+    });
+
+    test('still triggers issues on opened and reopened events', () => {
+      const issuesTypesStart = onSection.indexOf('issues:');
+      const pullRequestStart = onSection.indexOf(
+        'pull_request:',
+        issuesTypesStart,
+      );
+      const issuesBlock = onSection.slice(issuesTypesStart, pullRequestStart);
+      expect(issuesBlock).toContain('- opened');
+      expect(issuesBlock).toContain('- reopened');
     });
   });
 
