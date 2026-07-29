@@ -13,9 +13,11 @@ const managedRepositoryName = 'managed-fork';
 const managedRepository = `${organizationName}/${managedRepositoryName}`;
 const branchPrefix = 'project-common/update-common-files-';
 
-const stalePullRequestNumbers = [57, 59, 60, 61, 62, 63, 64, 65, 66, 67];
-const renamedBranchPullRequestNumber = 30;
-const unrelatedPullRequestNumber = 20;
+const stalePullRequestNumbers = [
+  101, 102, 103, 104, 105, 106, 107, 108, 109, 110,
+];
+const renamedBranchPullRequestNumber = 200;
+const unrelatedPullRequestNumber = 300;
 
 const openPullRequests = [
   ...stalePullRequestNumbers.map((pullRequestNumber, index) => ({
@@ -30,8 +32,8 @@ const openPullRequests = [
   },
   {
     number: unrelatedPullRequestNumber,
-    title: "fix(android): Can't connect to the server from real device",
-    headRefName: 'i3',
+    title: 'fix(sign-in): correct the redirect target after sign-in',
+    headRefName: 'feature/unrelated-work',
   },
 ];
 
@@ -41,7 +43,7 @@ const prefixedBranchNames = Array.from(
 );
 
 const branches = [
-  'i3',
+  'feature/unrelated-work',
   'main',
   ...prefixedBranchNames,
   'renamed-branch-without-prefix',
@@ -255,16 +257,17 @@ describe('common-file-sync-pull-request-cleanup.sh', () => {
     const run = runCleanup();
 
     expect(deletedBranchNames(run)).not.toContain('main');
-    expect(deletedBranchNames(run)).not.toContain('i3');
+    expect(deletedBranchNames(run)).not.toContain('feature/unrelated-work');
     expect(deletedBranchNames(run)).not.toContain(
       'renamed-branch-without-prefix',
     );
   });
 
   test('reports a rejected pull request close, still cleans up branches and exits non-zero', () => {
-    const run = runCleanup(60);
+    const rejectedPullRequestNumber = stalePullRequestNumbers[0];
+    const run = runCleanup(rejectedPullRequestNumber);
 
-    expect(run.stderr).toContain('60');
+    expect(run.stderr).toContain(String(rejectedPullRequestNumber));
     expect(run.stderr).toContain(managedRepository);
     expect(deletedBranchNames(run).sort()).toEqual(
       [...prefixedBranchNames].sort(),
