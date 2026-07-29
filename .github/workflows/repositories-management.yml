@@ -111,15 +111,30 @@ jobs:
             ACTION_RUN_ID=${{ github.run_id }}
             ACTION_LINK="https://github.com/${{ github.repository }}/actions/runs/$ACTION_RUN_ID"
             BRANCH_NAME="project-common/update-common-files-$(date +%Y%m%d%H%M%S)"
+            DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
             git switch -c $BRANCH_NAME
             git remote set-url origin https://x-access-token:$APP_TOKEN@github.com/$ORG_NAME/$REPO.git
             git remote -v
             git remote show origin
             git push origin $BRANCH_NAME
-            PR_OUTPUT=$(GH_TOKEN=$APP_TOKEN gh pr create --head $BRANCH_NAME --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK" 2>&1) || { echo "Warning: Failed to create PR for $REPO (skipping): $PR_OUTPUT"; cd ..; rm -rf $REPO; continue; }
-            PR_URL="$PR_OUTPUT"
-            echo "PR_URL: $PR_URL"
-            GH_TOKEN=$GH_BOT_TOKEN gh pr review --approve "$PR_URL"
+            PR_OUTPUT=$(GH_TOKEN=$APP_TOKEN gh pr create --repo "$ORG_NAME/$REPO" --base "$DEFAULT_BRANCH" --head "$BRANCH_NAME" --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK" 2>&1) || echo "Warning: Failed to create PR for $REPO, falling back to the pull request opened by the Create PR workflow: $PR_OUTPUT"
+            PR_URL=""
+            case "$BRANCH_NAME" in
+              project-common/update-common-files-*)
+                for ATTEMPT in 1 2 3; do
+                  PR_URL=$(GH_TOKEN=$APP_TOKEN gh pr list --repo "$ORG_NAME/$REPO" --head "$BRANCH_NAME" --state open --json url --jq '.[0].url')
+                  [ -n "$PR_URL" ] && break
+                  echo "No open pull request yet for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3); retrying in 10s"
+                  sleep 10s
+                done
+                ;;
+            esac
+            if [ -n "$PR_URL" ]; then
+              echo "PR_URL: $PR_URL"
+              GH_TOKEN=$GH_BOT_TOKEN gh pr review --approve "$PR_URL" || echo "Warning: Failed to approve $PR_URL"
+            else
+              echo "Warning: No open pull request found to approve for $REPO head $BRANCH_NAME"
+            fi
             cd ..
             rm -rf $REPO
             sleep 10s
@@ -253,12 +268,25 @@ jobs:
           source /tmp/gh_admin_api.sh
           ORG_NAME="${{ env.ORG_NAME }}"
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
+          FAILED_REPOS=""
           for REPO in $REPO_LIST; do
             echo "Updating merge settings for $REPO"
-            gh_admin_api PATCH "https://api.github.com/repos/$ORG_NAME/$REPO" '{ "delete_branch_on_merge": true, "allow_auto_merge": true, "allow_merge_commit": false, "allow_rebase_merge": false, "allow_squash_merge": true }' "200" > /dev/null || { echo "FATAL: failed to update merge settings for $REPO"; exit 1; }
+            if ! gh_admin_api PATCH "https://api.github.com/repos/$ORG_NAME/$REPO" '{ "delete_branch_on_merge": true, "allow_auto_merge": true, "allow_merge_commit": false, "allow_rebase_merge": false, "allow_squash_merge": true }' "200" > /dev/null; then
+              echo "WARNING: failed to update merge settings for $REPO; continuing with the remaining repositories"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 5s
+              continue
+            fi
             echo "Squash-only merge settings updated for $REPO"
-            sleep 30s
+            sleep 5s
           done
+          if [ -n "$FAILED_REPOS" ]; then
+            echo "FATAL: failed to update merge settings for the following repositories:"
+            for FAILED_REPO in $FAILED_REPOS; do
+              echo "  - $FAILED_REPO"
+            done
+            exit 1
+          fi
       - name: Generate hs-bot-gh-ap installation token for branch protection
         id: app-token-protection
         uses: actions/create-github-app-token@v3
@@ -273,12 +301,25 @@ jobs:
           source /tmp/gh_admin_api.sh
           ORG_NAME="${{ env.ORG_NAME }}"
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | .name')
+          FAILED_REPOS=""
           for REPO in $REPO_LIST; do
             echo "Updating branch protection for $REPO"
-            gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/branches/main/protection" '{ "required_status_checks": { "strict": false, "contexts": ["test", "format", "commit-lint", "create_and_enable_automerge", "Check linked issues in pull requests", "umino-job"] }, "enforce_admins": false, "required_pull_request_reviews": { "required_approving_review_count": 1, "require_code_owner_reviews": true }, "restrictions": null, "required_linear_history": false, "allow_force_pushes": false, "allow_deletions": false, "required_conversation_resolution": true }' "200" > /dev/null || { echo "FATAL: failed to update branch protection for $REPO"; exit 1; }
+            if ! gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/branches/main/protection" '{ "required_status_checks": { "strict": false, "contexts": ["test", "format", "commit-lint", "create_and_enable_automerge", "Check linked issues in pull requests", "umino-job"] }, "enforce_admins": false, "required_pull_request_reviews": { "required_approving_review_count": 1, "require_code_owner_reviews": true }, "restrictions": null, "required_linear_history": false, "allow_force_pushes": false, "allow_deletions": false, "required_conversation_resolution": true }' "200" > /dev/null; then
+              echo "WARNING: failed to update branch protection for $REPO; continuing with the remaining repositories"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 5s
+              continue
+            fi
             echo "Branch protection settings updated for $REPO"
-            sleep 30s
+            sleep 5s
           done
+          if [ -n "$FAILED_REPOS" ]; then
+            echo "FATAL: failed to update branch protection for the following repositories:"
+            for FAILED_REPO in $FAILED_REPOS; do
+              echo "  - $FAILED_REPO"
+            done
+            exit 1
+          fi
       - name: Generate hs-bot-gh-ap installation token for ruleset
         id: app-token-ruleset
         uses: actions/create-github-app-token@v3
@@ -301,17 +342,40 @@ jobs:
             "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
             "rules": [ { "type": "copilot_code_review", "parameters": { "review_draft_pull_requests": false, "review_on_push": true } } ]
           }'
+          FAILED_REPOS=""
           for REPO in $REPO_LIST; do
             echo "Processing Copilot code review ruleset for $REPO"
-            EXISTING_RULESETS="$(gh_admin_api GET "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "" "200")" || { echo "FATAL: failed to list rulesets for $REPO"; exit 1; }
+            if ! EXISTING_RULESETS="$(gh_admin_api GET "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "" "200")"; then
+              echo "WARNING: failed to list rulesets for $REPO; continuing with the remaining repositories"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 5s
+              continue
+            fi
             RULESET_ID="$(printf '%s' "$EXISTING_RULESETS" | jq -r --arg name "$RULESET_NAME" 'if type == "array" then (.[] | select(.name == $name) | .id) else empty end' | head -n1)"
             if [ -n "$RULESET_ID" ] && [ "$RULESET_ID" != "null" ]; then
               echo "Updating existing ruleset $RULESET_ID for $REPO"
-              gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets/$RULESET_ID" "$RULESET_PAYLOAD" "200" > /dev/null || { echo "FATAL: failed to update ruleset for $REPO"; exit 1; }
+              if ! gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets/$RULESET_ID" "$RULESET_PAYLOAD" "200" > /dev/null; then
+                echo "WARNING: failed to update ruleset for $REPO; continuing with the remaining repositories"
+                FAILED_REPOS="$FAILED_REPOS $REPO"
+                sleep 5s
+                continue
+              fi
             else
               echo "Creating new ruleset for $REPO"
-              gh_admin_api POST "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "$RULESET_PAYLOAD" "200 201" > /dev/null || { echo "FATAL: failed to create ruleset for $REPO"; exit 1; }
+              if ! gh_admin_api POST "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "$RULESET_PAYLOAD" "200 201" > /dev/null; then
+                echo "WARNING: failed to create ruleset for $REPO; continuing with the remaining repositories"
+                FAILED_REPOS="$FAILED_REPOS $REPO"
+                sleep 5s
+                continue
+              fi
             fi
             echo "Copilot code review ruleset configured for $REPO"
-            sleep 30s
+            sleep 5s
           done
+          if [ -n "$FAILED_REPOS" ]; then
+            echo "FATAL: failed to configure the Copilot code review ruleset for the following repositories:"
+            for FAILED_REPO in $FAILED_REPOS; do
+              echo "  - $FAILED_REPO"
+            done
+            exit 1
+          fi
