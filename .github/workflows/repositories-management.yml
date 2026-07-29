@@ -117,18 +117,30 @@ jobs:
             git remote -v
             git remote show origin
             git push origin $BRANCH_NAME
-            PR_OUTPUT=$(GH_TOKEN=$APP_TOKEN gh pr create --repo "$ORG_NAME/$REPO" --base "$DEFAULT_BRANCH" --head "$BRANCH_NAME" --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK" 2>&1) || echo "Warning: Failed to create PR for $REPO, falling back to the pull request opened by the Create PR workflow: $PR_OUTPUT"
             PR_URL=""
-            case "$BRANCH_NAME" in
-              project-common/update-common-files-*)
-                for ATTEMPT in 1 2 3; do
-                  PR_URL=$(GH_TOKEN=$APP_TOKEN gh pr list --repo "$ORG_NAME/$REPO" --head "$BRANCH_NAME" --state open --json url --jq '.[0].url') || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3)"; PR_URL=""; }
-                  [ -n "$PR_URL" ] && break
-                  echo "No open pull request yet for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3); retrying in 10s"
-                  sleep 10s
-                done
-                ;;
-            esac
+            if PR_CREATE_OUTPUT=$(GH_TOKEN=$APP_TOKEN gh pr create --repo "$ORG_NAME/$REPO" --base "$DEFAULT_BRANCH" --head "$BRANCH_NAME" --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK" 2>&1); then
+              PR_URL=$(printf '%s\n' "$PR_CREATE_OUTPUT" | grep -E '^https://github\.com/[^/]+/[^/]+/pull/[0-9]+$' | tail -n 1)
+              case "$PR_URL" in
+                "https://github.com/$ORG_NAME/$REPO/pull/"*) ;;
+                *) echo "Warning: Created pull request URL for $REPO is not in $ORG_NAME/$REPO: $PR_CREATE_OUTPUT"; PR_URL="" ;;
+              esac
+            else
+              echo "Warning: Failed to create PR for $REPO, falling back to the pull request opened by the Create PR workflow: $PR_CREATE_OUTPUT"
+              case "$BRANCH_NAME" in
+                project-common/update-common-files-*)
+                  for ATTEMPT in 1 2 3; do
+                    PR_URL=$(GH_TOKEN=$APP_TOKEN gh pr list --repo "$ORG_NAME/$REPO" --head "$BRANCH_NAME" --state open --json url,isCrossRepository --jq 'map(select(.isCrossRepository == false)) | .[0].url') || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3)"; PR_URL=""; }
+                    [ -n "$PR_URL" ] && break
+                    if [ "$ATTEMPT" -lt 3 ]; then
+                      echo "No open pull request yet for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3); retrying in 10s"
+                      sleep 10s
+                    else
+                      echo "No open pull request yet for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3)"
+                    fi
+                  done
+                  ;;
+              esac
+            fi
             if [ -n "$PR_URL" ]; then
               echo "PR_URL: $PR_URL"
               GH_TOKEN=$GH_BOT_TOKEN gh pr review --approve "$PR_URL" || echo "Warning: Failed to approve $PR_URL"

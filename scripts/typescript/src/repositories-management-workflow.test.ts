@@ -252,21 +252,21 @@ describe('repositories-management.yml workflow', () => {
       expect(betweenCreateAndApprove).not.toContain('continue');
     });
 
-    test('resolves the open pull request for the pushed head branch before approving', () => {
+    test('the fallback lookup asks the API to exclude cross-repository pull requests', () => {
       expect(stepBlock()).toContain(
-        'gh pr list --repo "$ORG_NAME/$REPO" --head "$BRANCH_NAME" --state open --json url --jq \'.[0].url\'',
+        'gh pr list --repo "$ORG_NAME/$REPO" --head "$BRANCH_NAME" --state open --json url,isCrossRepository --jq \'map(select(.isCrossRepository == false)) | .[0].url\'',
       );
       expect(stepBlock()).toContain('if [ -n "$PR_URL" ]; then');
     });
 
     test('approval is restricted to the common-files sync branches', () => {
       expect(stepBlock()).toContain(
-        'case "$BRANCH_NAME" in\n              project-common/update-common-files-*)',
+        'case "$BRANCH_NAME" in\n                project-common/update-common-files-*)',
       );
     });
 
-    describe('pull request lookup executed under errexit', () => {
-      const lookupScript = (): string => {
+    describe('pull request resolution and approval executed under errexit', () => {
+      const resolutionScript = (): string => {
         const block = stepBlock();
         const start = block.indexOf('PR_URL=""');
         expect(start).toBeGreaterThanOrEqual(0);
@@ -279,19 +279,21 @@ describe('repositories-management.yml workflow', () => {
           .join('\n');
       };
 
-      const runLookup = (
+      const runResolution = (
         ghStub: string,
       ): { status: number; output: string } => {
         const script = [
           'set -e',
-          'sleep() { :; }',
+          'sleep() { echo "slept $*"; }',
           ghStub,
           'ORG_NAME=example-org',
           'REPO=example-repo',
           'BRANCH_NAME=project-common/update-common-files-20260101000000',
+          'DEFAULT_BRANCH=main',
           'APP_TOKEN=app-token',
           'GH_BOT_TOKEN=bot-token',
-          lookupScript(),
+          'ACTION_LINK=https://example.invalid/actions/runs/1',
+          resolutionScript(),
         ].join('\n');
         const result = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
         return {
@@ -300,25 +302,108 @@ describe('repositories-management.yml workflow', () => {
         };
       };
 
+      const createdPullRequestUrl =
+        'https://github.com/example-org/example-repo/pull/7';
+      const forkPullRequestUrl =
+        'https://github.com/outsider/example-repo-fork/pull/9';
+      const workflowOpenedPullRequestUrl =
+        'https://github.com/example-org/example-repo/pull/3';
+
+      const ghStubWithSuccessfulCreation = [
+        'gh() {',
+        '  if [ "$1" = "pr" ] && [ "$2" = "create" ]; then',
+        `    echo "${createdPullRequestUrl}"`,
+        '    return 0',
+        '  fi',
+        '  if [ "$1" = "pr" ] && [ "$2" = "list" ]; then',
+        '    echo "head-branch lookup was performed" >&2',
+        `    echo "${forkPullRequestUrl}"`,
+        '    return 0',
+        '  fi',
+        '  echo "approved $*"',
+        '}',
+      ].join('\n');
+
+      const ghStubWithFailedCreationAndListedPullRequests = (
+        fixture: string,
+      ): string =>
+        [
+          'gh() {',
+          '  if [ "$1" = "pr" ] && [ "$2" = "create" ]; then',
+          '    echo "GraphQL: Resource not accessible by integration (createPullRequest)" >&2',
+          '    return 1',
+          '  fi',
+          '  if [ "$1" = "pr" ] && [ "$2" = "list" ]; then',
+          '    JSON_FIELDS=""',
+          '    JQ_EXPRESSION=""',
+          '    while [ "$#" -gt 0 ]; do',
+          '      case "$1" in',
+          '        --json) JSON_FIELDS="$2"; shift 2 ;;',
+          '        --jq) JQ_EXPRESSION="$2"; shift 2 ;;',
+          '        *) shift ;;',
+          '      esac',
+          '    done',
+          `    LISTED=$(printf '%s' '${fixture}' | jq --arg fields "$JSON_FIELDS" -c '($fields | split(",")) as $requested | [.[] | with_entries(select(.key as $key | $requested | index($key)))]' | jq -r "$JQ_EXPRESSION")`,
+          '    if [ "$LISTED" != "null" ]; then printf \'%s\\n\' "$LISTED"; fi',
+          '    return 0',
+          '  fi',
+          '  echo "approved $*"',
+          '}',
+        ].join('\n');
+
+      test('a created pull request is approved by the URL creation returned, without a head-branch lookup', () => {
+        const { status, output } = runResolution(ghStubWithSuccessfulCreation);
+        expect(status).toBe(0);
+        expect(output).toContain(`PR_URL: ${createdPullRequestUrl}`);
+        expect(output).toContain(
+          `approved pr review --approve ${createdPullRequestUrl}`,
+        );
+        expect(output).not.toContain('head-branch lookup was performed');
+        expect(output).not.toContain(forkPullRequestUrl);
+      });
+
+      test('the fallback lookup approves the same-repository pull request and never a fork one', () => {
+        const { status, output } = runResolution(
+          ghStubWithFailedCreationAndListedPullRequests(
+            `[{"url":"${forkPullRequestUrl}","isCrossRepository":true},{"url":"${workflowOpenedPullRequestUrl}","isCrossRepository":false}]`,
+          ),
+        );
+        expect(status).toBe(0);
+        expect(output).toContain(`PR_URL: ${workflowOpenedPullRequestUrl}`);
+        expect(output).toContain(
+          `approved pr review --approve ${workflowOpenedPullRequestUrl}`,
+        );
+        expect(output).not.toContain(forkPullRequestUrl);
+      });
+
+      test('a fork pull request alone on the head branch leaves nothing to approve', () => {
+        const { status, output } = runResolution(
+          ghStubWithFailedCreationAndListedPullRequests(
+            `[{"url":"${forkPullRequestUrl}","isCrossRepository":true}]`,
+          ),
+        );
+        expect(status).toBe(0);
+        expect(output).toContain('No open pull request found to approve');
+        expect(output).not.toContain('gh pr review --approve');
+        expect(output).not.toContain(forkPullRequestUrl);
+      });
+
+      test('the final retry attempt is not followed by a sleep', () => {
+        const { status, output } = runResolution(
+          ghStubWithFailedCreationAndListedPullRequests('[]'),
+        );
+        expect(status).toBe(0);
+        expect(output.match(/^slept /gm) ?? []).toHaveLength(2);
+        expect(output).toContain('(attempt 3 of 3)');
+        expect(output).not.toContain('(attempt 3 of 3); retrying in 10s');
+      });
+
       test('a failing lookup leaves the pull request unresolved without aborting the repository loop', () => {
-        const { status, output } = runLookup(
+        const { status, output } = runResolution(
           'gh() { echo "gh $*: forced failure" >&2; return 1; }',
         );
         expect(status).toBe(0);
         expect(output).toContain('No open pull request found to approve');
-      });
-
-      test('a successful lookup still approves the resolved pull request', () => {
-        const { status, output } = runLookup(
-          'gh() { if [ "$2" = "list" ]; then echo "https://github.com/example-org/example-repo/pull/1"; else echo "approved $*"; fi; }',
-        );
-        expect(status).toBe(0);
-        expect(output).toContain(
-          'PR_URL: https://github.com/example-org/example-repo/pull/1',
-        );
-        expect(output).toContain(
-          'approved pr review --approve https://github.com/example-org/example-repo/pull/1',
-        );
       });
     });
   });
