@@ -41,9 +41,64 @@ const extractRunScript = (stepName: string): string => {
   return scriptLines.join('\n');
 };
 
+const jobKeyIndentation = 2;
+
+const extractJobBlock = (jobName: string): string => {
+  const jobStart = workflowContent.indexOf(`\n  ${jobName}:\n`);
+  if (jobStart === -1) {
+    throw new Error(`the workflow declares no job named ${jobName}`);
+  }
+  const lines = workflowContent.slice(jobStart + 1).split('\n');
+  const jobLines = [lines[0]];
+  for (const line of lines.slice(1)) {
+    const indentation = line.length - line.trimStart().length;
+    if (line.trim() !== '' && indentation <= jobKeyIndentation) {
+      break;
+    }
+    jobLines.push(line);
+  }
+  return jobLines.join('\n');
+};
+
+const jobLevelEnvironmentReferences = (
+  jobName: string,
+): Record<string, string> => {
+  const lines = extractJobBlock(jobName).split('\n');
+  const environmentLineIndex = lines.findIndex((line) => line === '    env:');
+  if (environmentLineIndex === -1) {
+    return {};
+  }
+  const references: Record<string, string> = {};
+  for (const line of lines.slice(environmentLineIndex + 1)) {
+    const declaration = /^ {6}([A-Za-z0-9_]+): (.+)$/.exec(line);
+    if (declaration === null) {
+      break;
+    }
+    references[declaration[1]] = declaration[2];
+  }
+  return references;
+};
+
 const patCredential = 'pat-credential-sentinel';
 const appTokenCredential = 'app-token-sentinel';
 const organizationName = 'HiromiShikata';
+const repositoryConfigJobName = 'repository-config';
+const personalAccessTokenReference = '${{ secrets.GH_TOKEN }}';
+
+const sentinelForCredentialReference = (reference: string): string => {
+  if (reference === personalAccessTokenReference) {
+    return patCredential;
+  }
+  throw new Error(
+    `no sentinel is defined for the credential reference ${reference}`,
+  );
+};
+
+const repositoryConfigEnvironment: Record<string, string> = Object.fromEntries(
+  Object.entries(jobLevelEnvironmentReferences(repositoryConfigJobName)).map(
+    ([name, reference]) => [name, sentinelForCredentialReference(reference)],
+  ),
+);
 
 const ghStubSource = `#!/usr/bin/env bash
 set -euo pipefail
@@ -71,6 +126,7 @@ method="GET"
 header_file=""
 request_url=""
 authorization=""
+data=""
 arguments=("$@")
 index=0
 while [ "$index" -lt "\${#arguments[@]}" ]; do
@@ -84,7 +140,11 @@ while [ "$index" -lt "\${#arguments[@]}" ]; do
       index=$((index + 1))
       header_file="\${arguments[$index]}"
       ;;
-    -d | -w)
+    -d)
+      index=$((index + 1))
+      data="\${arguments[$index]}"
+      ;;
+    -w)
       index=$((index + 1))
       ;;
     -H)
@@ -100,12 +160,18 @@ while [ "$index" -lt "\${#arguments[@]}" ]; do
   esac
   index=$((index + 1))
 done
-printf '%s\\t%s\\t%s\\n' "$method" "$request_url" "$authorization" >> "$STUB_CURL_LOG"
+jq -cn \\
+  --arg method "$method" \\
+  --arg url "$request_url" \\
+  --arg authorization "$authorization" \\
+  --arg data "$data" \\
+  '{method: $method, url: $url, authorization: $authorization, data: $data}' \\
+  >> "$STUB_CURL_LOG"
 if [ -n "$header_file" ]; then
   printf 'HTTP/2 200\\r\\nx-ratelimit-remaining: 4999\\r\\nx-ratelimit-reset: 9999999999\\r\\n\\r\\n' > "$header_file"
 fi
 if [ "$method" = "GET" ]; then
-  printf '%s\\n%s' '[]' '200'
+  printf '%s\\n%s' "$(cat "$STUB_GET_RESPONSE_BODY")" '200'
 else
   printf '%s\\n%s' '{}' '200'
 fi
@@ -125,6 +191,7 @@ type RecordedRequest = {
   method: string;
   url: string;
   authorization: string;
+  data: string;
 };
 
 type StepRunResult = {
@@ -133,9 +200,38 @@ type StepRunResult = {
   requests: RecordedRequest[];
 };
 
+const parseRecordedRequest = (loggedLine: string): RecordedRequest => {
+  const parsed: unknown = JSON.parse(loggedLine);
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    !('method' in parsed) ||
+    !('url' in parsed) ||
+    !('authorization' in parsed) ||
+    !('data' in parsed) ||
+    typeof parsed.method !== 'string' ||
+    typeof parsed.url !== 'string' ||
+    typeof parsed.authorization !== 'string' ||
+    typeof parsed.data !== 'string'
+  ) {
+    throw new Error(
+      `the curl stub logged a line that is not a recorded request: ${loggedLine}`,
+    );
+  }
+  return {
+    method: parsed.method,
+    url: parsed.url,
+    authorization: parsed.authorization,
+    data: parsed.data,
+  };
+};
+
+const emptyRulesetListResponse = '[]';
+
 const runStepScripts = (
   stepNames: string[],
   repositories: RepositoryListEntry[],
+  getResponseBody: string = emptyRulesetListResponse,
 ): StepRunResult => {
   const sandbox = fs.mkdtempSync(
     path.join(os.tmpdir(), 'repositories-management-workflow-'),
@@ -153,6 +249,8 @@ const runStepScripts = (
   fs.writeFileSync(repositoryListPath, JSON.stringify(repositories));
   const curlLogPath = path.join(sandbox, 'curl.log');
   fs.writeFileSync(curlLogPath, '');
+  const getResponseBodyPath = path.join(sandbox, 'get-response-body.json');
+  fs.writeFileSync(getResponseBodyPath, getResponseBody);
   const helperPath = path.join(sandbox, 'gh_admin_api.sh');
 
   const script = ['set -e', ...stepNames.map(extractRunScript)]
@@ -166,21 +264,19 @@ const runStepScripts = (
     env: {
       PATH: `${stubDirectory}:${process.env.PATH ?? ''}`,
       HOME: sandbox,
-      GH_TOKEN: patCredential,
+      ...repositoryConfigEnvironment,
       APP_TOKEN: appTokenCredential,
       STUB_REPOSITORY_LIST_JSON: repositoryListPath,
       STUB_CURL_LOG: curlLogPath,
+      STUB_GET_RESPONSE_BODY: getResponseBodyPath,
     },
   });
 
-  const requests = fs
+  const requests: RecordedRequest[] = fs
     .readFileSync(curlLogPath, 'utf8')
     .split('\n')
     .filter((line) => line.length > 0)
-    .map((line) => {
-      const [method, url, authorization] = line.split('\t');
-      return { method, url, authorization };
-    });
+    .map(parseRecordedRequest);
 
   return {
     status: outcome.status,
@@ -192,11 +288,17 @@ const runStepScripts = (
 const runStepScriptsExpectingSuccess = (
   stepNames: string[],
   repositories: RepositoryListEntry[],
+  getResponseBody: string = emptyRulesetListResponse,
 ): StepRunResult => {
-  const result = runStepScripts(stepNames, repositories);
+  const result = runStepScripts(stepNames, repositories, getResponseBody);
   expect(result.output).not.toContain('unexpected gh invocation');
   expect(result.status).toBe(0);
   return result;
+};
+
+const requestPayload = (request: RecordedRequest): unknown => {
+  expect(request.data).not.toBe('');
+  return JSON.parse(request.data);
 };
 
 const helperStepName = 'Prepare rate-limit-aware admin API helper';
@@ -208,6 +310,62 @@ const rulesetStepName =
 
 const protectionUrl = (repositoryName: string, branchName: string): string =>
   `https://api.github.com/repos/${organizationName}/${repositoryName}/branches/${branchName}/protection`;
+
+const repositoryUrl = (repositoryName: string): string =>
+  `https://api.github.com/repos/${organizationName}/${repositoryName}`;
+
+const rulesetsUrl = (repositoryName: string): string =>
+  `${repositoryUrl(repositoryName)}/rulesets`;
+
+const expectedMergeSettingsPayload = {
+  delete_branch_on_merge: true,
+  allow_auto_merge: true,
+  allow_merge_commit: false,
+  allow_rebase_merge: false,
+  allow_squash_merge: true,
+};
+
+const expectedBranchProtectionPayload = {
+  required_status_checks: {
+    strict: false,
+    contexts: [
+      'test',
+      'format',
+      'commit-lint',
+      'create_and_enable_automerge',
+      'Check linked issues in pull requests',
+      'umino-job',
+    ],
+  },
+  enforce_admins: false,
+  required_pull_request_reviews: {
+    required_approving_review_count: 1,
+    require_code_owner_reviews: true,
+  },
+  restrictions: null,
+  required_linear_history: false,
+  allow_force_pushes: false,
+  allow_deletions: false,
+  required_conversation_resolution: true,
+};
+
+const expectedRulesetPayload = {
+  name: 'copilot-code-review',
+  target: 'branch',
+  enforcement: 'active',
+  conditions: {
+    ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] },
+  },
+  rules: [
+    {
+      type: 'copilot_code_review',
+      parameters: {
+        review_draft_pull_requests: false,
+        review_on_push: true,
+      },
+    },
+  ],
+};
 
 const mainDefaultBranchRepository: RepositoryListEntry = {
   name: 'repositories-management',
@@ -277,11 +435,113 @@ describe('repository-config admin API credential', () => {
   });
 
   test('repository-config mints no GitHub App installation token', () => {
-    const jobStart = workflowContent.indexOf('  repository-config:');
-    expect(jobStart).toBeGreaterThanOrEqual(0);
-    const repositoryConfigJob = workflowContent.slice(jobStart);
+    const repositoryConfigJob = extractJobBlock(repositoryConfigJobName);
     expect(repositoryConfigJob).not.toContain('create-github-app-token');
     expect(repositoryConfigJob).not.toContain('APP_TOKEN');
+  });
+
+  test('repository-config declares the personal access token in its own job-level env block', () => {
+    expect(jobLevelEnvironmentReferences(repositoryConfigJobName)).toEqual({
+      GH_TOKEN: personalAccessTokenReference,
+    });
+  });
+});
+
+describe('repository-config admin API request payloads', () => {
+  test('merge settings requests write squash-only merge settings', () => {
+    const result = runStepScriptsExpectingSuccess(
+      [helperStepName, mergeSettingsStepName],
+      twoRepositories,
+    );
+    expect(
+      result.requests.map((request) => ({
+        method: request.method,
+        url: request.url,
+        payload: requestPayload(request),
+      })),
+    ).toEqual([
+      {
+        method: 'PATCH',
+        url: repositoryUrl('repositories-management'),
+        payload: expectedMergeSettingsPayload,
+      },
+      {
+        method: 'PATCH',
+        url: repositoryUrl('deepmerge-yaml'),
+        payload: expectedMergeSettingsPayload,
+      },
+    ]);
+  });
+
+  test('branch protection requests write the review, force-push and conversation rules', () => {
+    const result = runStepScriptsExpectingSuccess(
+      [helperStepName, branchProtectionStepName],
+      twoRepositories,
+    );
+    expect(
+      result.requests.map((request) => ({
+        method: request.method,
+        url: request.url,
+        payload: requestPayload(request),
+      })),
+    ).toEqual([
+      {
+        method: 'PUT',
+        url: protectionUrl('repositories-management', 'main'),
+        payload: expectedBranchProtectionPayload,
+      },
+      {
+        method: 'PUT',
+        url: protectionUrl('deepmerge-yaml', 'master'),
+        payload: expectedBranchProtectionPayload,
+      },
+    ]);
+  });
+
+  test('ruleset creation writes the active Copilot code review ruleset', () => {
+    const result = runStepScriptsExpectingSuccess(
+      [helperStepName, rulesetStepName],
+      [mainDefaultBranchRepository],
+    );
+    expect(
+      result.requests.map((request) => ({
+        method: request.method,
+        url: request.url,
+        data: request.data,
+      })),
+    ).toEqual([
+      {
+        method: 'GET',
+        url: rulesetsUrl('repositories-management'),
+        data: '',
+      },
+      {
+        method: 'POST',
+        url: rulesetsUrl('repositories-management'),
+        data: result.requests[1].data,
+      },
+    ]);
+    expect(requestPayload(result.requests[1])).toEqual(expectedRulesetPayload);
+  });
+
+  test('ruleset update writes the active Copilot code review ruleset to the existing ruleset id', () => {
+    const existingRulesetId = 4242;
+    const result = runStepScriptsExpectingSuccess(
+      [helperStepName, rulesetStepName],
+      [mainDefaultBranchRepository],
+      JSON.stringify([
+        { id: existingRulesetId, name: 'copilot-code-review' },
+        { id: 7, name: 'unrelated-ruleset' },
+      ]),
+    );
+    expect(result.requests.map((request) => request.method)).toEqual([
+      'GET',
+      'PUT',
+    ]);
+    expect(result.requests[1].url).toBe(
+      `${rulesetsUrl('repositories-management')}/${existingRulesetId}`,
+    );
+    expect(requestPayload(result.requests[1])).toEqual(expectedRulesetPayload);
   });
 });
 
