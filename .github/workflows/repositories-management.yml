@@ -122,7 +122,7 @@ jobs:
             case "$BRANCH_NAME" in
               project-common/update-common-files-*)
                 for ATTEMPT in 1 2 3; do
-                  PR_URL=$(GH_TOKEN=$APP_TOKEN gh pr list --repo "$ORG_NAME/$REPO" --head "$BRANCH_NAME" --state open --json url --jq '.[0].url')
+                  PR_URL=$(GH_TOKEN=$APP_TOKEN gh pr list --repo "$ORG_NAME/$REPO" --head "$BRANCH_NAME" --state open --json url --jq '.[0].url') || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3)"; PR_URL=""; }
                   [ -n "$PR_URL" ] && break
                   echo "No open pull request yet for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3); retrying in 10s"
                   sleep 10s
@@ -289,12 +289,14 @@ jobs:
           fi
       - name: Generate hs-bot-gh-ap installation token for branch protection
         id: app-token-protection
+        if: ${{ !cancelled() }}
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
           private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
           owner: HiromiShikata
       - name: Update branch protection settings for all repositories
+        if: ${{ !cancelled() }}
         env:
           APP_TOKEN: ${{ steps.app-token-protection.outputs.token }}
         run: |
@@ -322,12 +324,14 @@ jobs:
           fi
       - name: Generate hs-bot-gh-ap installation token for ruleset
         id: app-token-ruleset
+        if: ${{ !cancelled() }}
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
           private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
           owner: HiromiShikata
       - name: Create or update Copilot code review ruleset for all repositories
+        if: ${{ !cancelled() }}
         env:
           APP_TOKEN: ${{ steps.app-token-ruleset.outputs.token }}
         run: |

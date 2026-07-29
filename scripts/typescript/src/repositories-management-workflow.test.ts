@@ -1,5 +1,13 @@
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+
+interface WorkflowStep {
+  name: string | null;
+  id: string | null;
+  ifCondition: string | null;
+  body: string;
+}
 
 describe('repositories-management.yml workflow', () => {
   const workflowContent = fs.readFileSync(
@@ -89,6 +97,109 @@ describe('repositories-management.yml workflow', () => {
     },
   );
 
+  const repositoryConfigSteps = (): WorkflowStep[] => {
+    const jobStart = workflowContent.indexOf('\n  repository-config:\n');
+    expect(jobStart).toBeGreaterThanOrEqual(0);
+    const remainder = workflowContent.slice(jobStart + 1);
+    const nextJobOffset = remainder.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+    const jobBlock =
+      nextJobOffset === -1 ? remainder : remainder.slice(0, nextJobOffset + 1);
+    const stepsBlock = jobBlock.slice(jobBlock.indexOf('\n    steps:\n'));
+    const markerPattern = /\n {6}- /g;
+    const markers: number[] = [];
+    let marker = markerPattern.exec(stepsBlock);
+    while (marker !== null) {
+      markers.push(marker.index);
+      marker = markerPattern.exec(stepsBlock);
+    }
+    expect(markers.length).toBeGreaterThan(0);
+    return markers.map((start, index) => {
+      const end =
+        index + 1 < markers.length ? markers[index + 1] : stepsBlock.length;
+      const body = stepsBlock.slice(start, end);
+      const readField = (field: string): string | null => {
+        const fieldMatch = body.match(
+          new RegExp(`(?:^|\\n) *(?:- )?${field}: (.*)`),
+        );
+        return fieldMatch === null ? null : fieldMatch[1].trim();
+      };
+      return {
+        name: readField('name'),
+        id: readField('id'),
+        ifCondition: readField('if'),
+        body,
+      };
+    });
+  };
+
+  describe('repository-config step gating', () => {
+    const notCancelledCondition = '${{ !cancelled() }}';
+
+    test('every step after the merge settings loop still runs when an earlier loop recorded failures', () => {
+      const steps = repositoryConfigSteps();
+      const mergeSettingsIndex = steps.findIndex(
+        (step) =>
+          step.name === 'Update repository settings for all repositories',
+      );
+      expect(mergeSettingsIndex).toBeGreaterThanOrEqual(0);
+      const laterNamedSteps = steps
+        .slice(mergeSettingsIndex + 1)
+        .filter((step) => step.name !== null);
+      expect(laterNamedSteps.map((step) => step.name)).toEqual([
+        'Generate hs-bot-gh-ap installation token for branch protection',
+        'Update branch protection settings for all repositories',
+        'Generate hs-bot-gh-ap installation token for ruleset',
+        'Create or update Copilot code review ruleset for all repositories',
+      ]);
+      laterNamedSteps.forEach((step) => {
+        expect(step.ifCondition).toBe(notCancelledCondition);
+      });
+    });
+
+    test('the token each later loop consumes is produced by a step that also survives an earlier failure', () => {
+      const steps = repositoryConfigSteps();
+      const conditionById = new Map(
+        steps.map((step) => [step.id, step.ifCondition]),
+      );
+      const loopSteps = steps.filter(
+        (step) =>
+          step.name ===
+            'Update branch protection settings for all repositories' ||
+          step.name ===
+            'Create or update Copilot code review ruleset for all repositories',
+      );
+      expect(loopSteps).toHaveLength(2);
+      loopSteps.forEach((loopStep) => {
+        const tokenMatch = loopStep.body.match(
+          /steps\.([a-z0-9-]+)\.outputs\.token/,
+        );
+        expect(tokenMatch).not.toBeNull();
+        const tokenStepId = tokenMatch === null ? '' : tokenMatch[1];
+        expect(conditionById.get(tokenStepId)).toBe(notCancelledCondition);
+      });
+    });
+
+    test('a cancelled run still stops the remaining repository-config steps', () => {
+      repositoryConfigSteps().forEach((step) => {
+        expect(step.body).not.toContain('always()');
+        expect(step.body).not.toContain('success() ||');
+      });
+    });
+
+    test('the job conclusion is still failure when any repository failed in any loop', () => {
+      const steps = repositoryConfigSteps();
+      perRepositoryConfigSteps.forEach((stepName) => {
+        const configStep = steps.find((step) => step.name === stepName);
+        expect(configStep).toBeDefined();
+        const body = configStep === undefined ? '' : configStep.body;
+        const loopEnd = body.indexOf('\n          done');
+        expect(loopEnd).toBeGreaterThan(0);
+        expect(body.slice(loopEnd)).toContain('exit 1');
+        expect(body).not.toContain('continue-on-error');
+      });
+    });
+  });
+
   test('rate-limit backoff in the admin API helper is preserved', () => {
     const helperBlock = extractStepBlock(
       'Prepare rate-limit-aware admin API helper',
@@ -152,6 +263,63 @@ describe('repositories-management.yml workflow', () => {
       expect(stepBlock()).toContain(
         'case "$BRANCH_NAME" in\n              project-common/update-common-files-*)',
       );
+    });
+
+    describe('pull request lookup executed under errexit', () => {
+      const lookupScript = (): string => {
+        const block = stepBlock();
+        const start = block.indexOf('PR_URL=""');
+        expect(start).toBeGreaterThanOrEqual(0);
+        const end = block.indexOf('\n            cd ..', start);
+        expect(end).toBeGreaterThan(start);
+        return block
+          .slice(start, end)
+          .split('\n')
+          .map((line) => line.replace(/^ {12}/, ''))
+          .join('\n');
+      };
+
+      const runLookup = (
+        ghStub: string,
+      ): { status: number; output: string } => {
+        const script = [
+          'set -e',
+          'sleep() { :; }',
+          ghStub,
+          'ORG_NAME=example-org',
+          'REPO=example-repo',
+          'BRANCH_NAME=project-common/update-common-files-20260101000000',
+          'APP_TOKEN=app-token',
+          'GH_BOT_TOKEN=bot-token',
+          lookupScript(),
+        ].join('\n');
+        const result = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+        return {
+          status: result.status === null ? -1 : result.status,
+          output: `${result.stdout}${result.stderr}`,
+        };
+      };
+
+      test('a failing lookup leaves the pull request unresolved without aborting the repository loop', () => {
+        const { status, output } = runLookup(
+          'gh() { echo "gh $*: forced failure" >&2; return 1; }',
+        );
+        expect(status).toBe(0);
+        expect(output).toContain('No open pull request found to approve');
+      });
+
+      test('a successful lookup still approves the resolved pull request', () => {
+        const { status, output } = runLookup(
+          'gh() { if [ "$2" = "list" ]; then echo "https://github.com/example-org/example-repo/pull/1"; else echo "approved $*"; fi; }',
+        );
+        expect(status).toBe(0);
+        expect(output).toContain(
+          'PR_URL: https://github.com/example-org/example-repo/pull/1',
+        );
+        expect(output).toContain(
+          'approved pr review --approve https://github.com/example-org/example-repo/pull/1',
+        );
+      });
     });
   });
 });
