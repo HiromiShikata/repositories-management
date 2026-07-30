@@ -366,6 +366,21 @@ const branchProtectionStepName =
 const rulesetStepName =
   'Create or update Copilot code review ruleset for all repositories';
 
+const shellVariableAssignment = (
+  stepName: string,
+  variableName: string,
+): string => {
+  const assignment = new RegExp(`^${variableName}="([^"]*)"$`, 'm').exec(
+    extractRunScript(stepName),
+  );
+  if (assignment === null) {
+    throw new Error(
+      `the ${stepName} step assigns no shell variable named ${variableName}`,
+    );
+  }
+  return assignment[1];
+};
+
 const protectionUrl = (repositoryName: string, branchName: string): string =>
   `https://api.github.com/repos/${organizationName}/${repositoryName}/branches/${branchName}/protection`;
 
@@ -433,6 +448,13 @@ const mainDefaultBranchRepository: RepositoryListEntry = {
   defaultBranchRef: { name: 'main' },
 };
 const masterDefaultBranchRepository: RepositoryListEntry = {
+  name: 'repository-with-master-default-branch',
+  isArchived: false,
+  isPrivate: false,
+  isFork: false,
+  defaultBranchRef: { name: 'master' },
+};
+const upstreamTrackingForkRepository: RepositoryListEntry = {
   name: 'deepmerge-yaml',
   isArchived: false,
   isPrivate: false,
@@ -566,7 +588,7 @@ describe('repository-config admin API request payloads', () => {
       },
       {
         method: 'PATCH',
-        url: repositoryUrl('deepmerge-yaml'),
+        url: repositoryUrl(masterDefaultBranchRepository.name),
         payload: expectedMergeSettingsPayload,
       },
     ]);
@@ -591,7 +613,7 @@ describe('repository-config admin API request payloads', () => {
       },
       {
         method: 'PUT',
-        url: protectionUrl('deepmerge-yaml', 'master'),
+        url: protectionUrl(masterDefaultBranchRepository.name, 'master'),
         payload: expectedBranchProtectionPayload,
       },
     ]);
@@ -652,7 +674,7 @@ describe('repository-config branch protection target branch', () => {
     });
     expect(result.requests.map((request) => request.url)).toEqual([
       protectionUrl('repositories-management', 'main'),
-      protectionUrl('deepmerge-yaml', 'master'),
+      protectionUrl(masterDefaultBranchRepository.name, 'master'),
     ]);
   });
 
@@ -662,7 +684,7 @@ describe('repository-config branch protection target branch', () => {
       repositories: [masterDefaultBranchRepository],
     });
     expect(result.requests.map((request) => request.url)).toEqual([
-      protectionUrl('deepmerge-yaml', 'master'),
+      protectionUrl(masterDefaultBranchRepository.name, 'master'),
     ]);
   });
 
@@ -685,7 +707,7 @@ describe('repository-config branch protection target branch', () => {
     );
     expect(result.output).toContain('  - freshly-created-repository');
     expect(result.requests.map((request) => request.url)).toEqual([
-      protectionUrl('deepmerge-yaml', 'master'),
+      protectionUrl(masterDefaultBranchRepository.name, 'master'),
     ]);
   });
 
@@ -711,7 +733,7 @@ describe('repository-config branch protection target branch', () => {
       ],
     });
     expect(result.requests.map((request) => request.url)).toEqual([
-      protectionUrl('deepmerge-yaml', 'master'),
+      protectionUrl(masterDefaultBranchRepository.name, 'master'),
     ]);
   });
 });
@@ -895,27 +917,66 @@ describe('repository-config expected skips that can never succeed', () => {
     }
   });
 
-  test('the ruleset-protected repository is skipped by branch protection only', () => {
-    const protectionResult = runStepScriptsExpectingSuccess({
+  test('both named branch protection exceptions are skipped for their own stated reason while the rest of the fleet is protected', () => {
+    const result = runStepScriptsExpectingSuccess({
       stepNames: [helperStepName, branchProtectionStepName],
-      repositories: [rulesetProtectedRepository, mainDefaultBranchRepository],
+      repositories: [
+        rulesetProtectedRepository,
+        upstreamTrackingForkRepository,
+        mainDefaultBranchRepository,
+      ],
     });
-    expect(protectionResult.output).toContain(
+    expect(result.output).toContain(
       `EXPECTED SKIP: ${rulesetProtectedRepository.name} guards its default branch with a repository ruleset instead of classic branch protection`,
     );
-    expect(protectionResult.requests.map((request) => request.url)).toEqual([
+    expect(result.output).toContain(
+      `EXPECTED SKIP: ${upstreamTrackingForkRepository.name} tracks an upstream project instead of being developed here`,
+    );
+    expect(result.requests.map((request) => request.url)).toEqual([
       protectionUrl(mainDefaultBranchRepository.name, 'main'),
     ]);
+  });
 
-    const rulesetResult = runStepScriptsExpectingSuccess({
-      stepNames: [helperStepName, rulesetStepName],
-      repositories: [rulesetProtectedRepository],
+  test('both named branch protection exceptions are still configured by the ruleset step', () => {
+    for (const repository of [
+      rulesetProtectedRepository,
+      upstreamTrackingForkRepository,
+    ]) {
+      const result = runStepScriptsExpectingSuccess({
+        stepNames: [helperStepName, rulesetStepName],
+        repositories: [repository],
+      });
+      expect(result.output).not.toContain('EXPECTED SKIP');
+      expect(result.requests.map((request) => request.url)).toEqual([
+        rulesetsUrl(repository.name),
+        rulesetsUrl(repository.name),
+      ]);
+    }
+  });
+
+  test('the branch protection exception lists name exactly the two documented repositories', () => {
+    expect(
+      shellVariableAssignment(
+        branchProtectionStepName,
+        'RULESET_PROTECTED_REPOSITORIES',
+      ),
+    ).toBe(rulesetProtectedRepository.name);
+    expect(
+      shellVariableAssignment(
+        branchProtectionStepName,
+        'UPSTREAM_TRACKING_FORK_REPOSITORIES',
+      ),
+    ).toBe(upstreamTrackingForkRepository.name);
+  });
+
+  test('a public fork that is on neither exception list still fails the step when its protection request fails', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [publicForkRepository],
+      serverErrorRepositories: [publicForkRepository.name],
     });
-    expect(rulesetResult.output).not.toContain('EXPECTED SKIP');
-    expect(rulesetResult.requests.map((request) => request.url)).toEqual([
-      rulesetsUrl(rulesetProtectedRepository.name),
-      rulesetsUrl(rulesetProtectedRepository.name),
-    ]);
+    expect(result.output).not.toContain('EXPECTED SKIP');
+    expect(result.output).toContain(`  - ${publicForkRepository.name}`);
   });
 
   test('a repository that does not report the required status check contexts is never skipped', () => {

@@ -284,14 +284,22 @@ jobs:
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isPrivate,isFork,defaultBranchRef | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | [.name, (.isPrivate | tostring), (.isFork | tostring), .defaultBranchRef.name] | @tsv')
           BRANCH_PROTECTION_PAYLOAD='{ "required_status_checks": { "strict": false, "contexts": ["test", "format", "commit-lint", "create_and_enable_automerge", "Check linked issues in pull requests", "umino-job"] }, "enforce_admins": false, "required_pull_request_reviews": { "required_approving_review_count": 1, "require_code_owner_reviews": true }, "restrictions": null, "required_linear_history": false, "allow_force_pushes": false, "allow_deletions": false, "required_conversation_resolution": true }'
           REQUIRED_CONTEXTS="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -r '.required_status_checks.contexts | join(", ")')"
-          # termux-app has classic branch protection disabled repository-wide because its default branch is guarded by a repository ruleset instead of classic branch protection, so this endpoint can never succeed there.
+          # termux-app has classic branch protection disabled repository-wide because its default branch is guarded by a repository ruleset instead of classic branch protection, so this request can never succeed there.
           RULESET_PROTECTED_REPOSITORIES="termux-app"
+          # deepmerge-yaml is a public fork of an upstream project this account tracks rather than develops, so its continuous integration is the upstream project's and reports only Build and Lint; this request would succeed there and would permanently block its every pull request against six required contexts that will never report.
+          UPSTREAM_TRACKING_FORK_REPOSITORIES="deepmerge-yaml"
           FAILED_REPOS=""
           while IFS=$'\t' read -r REPO IS_PRIVATE IS_FORK DEFAULT_BRANCH; do
             [ -z "$REPO" ] && continue
             case " $RULESET_PROTECTED_REPOSITORIES " in
               *" $REPO "*)
                 echo "EXPECTED SKIP: $REPO guards its default branch with a repository ruleset instead of classic branch protection, so classic branch protection is disabled repository-wide there"
+                continue
+                ;;
+            esac
+            case " $UPSTREAM_TRACKING_FORK_REPOSITORIES " in
+              *" $REPO "*)
+                echo "EXPECTED SKIP: $REPO tracks an upstream project instead of being developed here, so it reports none of the required status check contexts and protecting it would block its every pull request permanently"
                 continue
                 ;;
             esac
