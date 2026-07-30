@@ -67,22 +67,9 @@ jobs:
             )
           for REPO in $REPO_LIST; do
             echo "REPO: $REPO"
+            "$GITHUB_WORKSPACE/scripts/common-file-sync-pull-request-cleanup.sh" "$ORG_NAME" "$REPO" || echo "Warning: cleanup of previous common file pull requests and branches did not fully complete for $REPO"
+
             gh repo clone $ORG_NAME/$REPO
-
-            cd $REPO
-            PR_LIST=$(gh pr list --state open --json number,title -q ".[] | select(.title == \"Updated common files in HiromiShikata\").number")
-            echo "PR_LIST: ${PR_LIST}"
-            for PR_NUMBER in $PR_LIST; do
-              echo "PR_NUMBER: ${PR_NUMBER}"
-              gh pr close $PR_NUMBER
-            done
-            prefix="project-common/update-common-files-"
-
-            gh api repos/:owner/:repo/branches | jq -r --arg prefix "$prefix" '.[] | select(.name | startswith($prefix)) | .name' | while read branch_name; do
-              echo "Deleting branch: $branch_name"
-              gh api -X DELETE /repos/:owner/:repo/git/refs/heads/$branch_name
-            done
-            cd ../
 
             for FILE in "${FILES_TO_SYNC[@]}"; do
               DIRECTORY=$(dirname $FILE)
