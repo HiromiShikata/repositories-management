@@ -1,16 +1,8 @@
-name: Empty format test
+name: Prettier format
 
 on: push
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: step-security/harden-runner@v2
-        with:
-          egress-policy: audit
-      - run: echo "test"
-
   format:
     runs-on: ubuntu-latest
     permissions:
