@@ -1228,6 +1228,50 @@ describe('repository-config branch protection context-reporting precondition', (
     ]);
   });
 
+  test('every provable repository after the first unprovable one still receives its protection write, and the non-zero exit happens only in the post-loop report', () => {
+    const provableRepositories: RepositoryListEntry[] = [
+      'first-provable-repository',
+      'second-provable-repository',
+      'third-provable-repository',
+    ].map((name) => ({
+      name,
+      isArchived: false,
+      isPrivate: false,
+      isFork: false,
+      defaultBranchRef: { name: 'main' },
+    }));
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [unprotectedRepository, ...provableRepositories],
+      unprotectedRepositories: [unprotectedRepository.name],
+      openPullRequestCheckRuns: {
+        [unprotectedRepository.name]: [
+          [...contextsReportedByEveryRepository, 'build-and-test'],
+        ],
+      },
+    });
+    expect(writeRequests(result).map((request) => request.url)).toEqual(
+      provableRepositories.map((repository) =>
+        protectionUrl(repository.name, 'main'),
+      ),
+    );
+    const lastWriteConfirmation = result.output.lastIndexOf(
+      `Branch protection settings updated for ${provableRepositories[2].name}`,
+    );
+    const countReport = result.output.indexOf(
+      'Configured 3 of 4 repositories for branch protection',
+    );
+    const failureReport = result.output.indexOf(
+      'FATAL: failed to configure branch protection for the following repositories:',
+    );
+    expect(lastWriteConfirmation).toBeGreaterThanOrEqual(0);
+    expect(countReport).toBeGreaterThan(lastWriteConfirmation);
+    expect(failureReport).toBeGreaterThan(countReport);
+    expect(
+      result.output.indexOf(`  - ${unprotectedRepository.name}`),
+    ).toBeGreaterThan(failureReport);
+  });
+
   test('a private fork whose existing protection read is refused by the plan gate is skipped without any write', () => {
     const result = runStepScriptsExpectingSuccess({
       stepNames: [helperStepName, branchProtectionStepName],
