@@ -186,6 +186,7 @@ jobs:
       - name: Prepare rate-limit-aware admin API helper
         run: |
           cat > /tmp/gh_admin_api.sh <<'HELPER'
+          GH_ADMIN_API_FORBIDDEN_EXIT_CODE=3
           gh_admin_api() {
             local method="$1" url="$2" data="$3" ok_codes="$4"
             local hdr body status remaining reset retry now wait_seconds
@@ -232,6 +233,11 @@ jobs:
                 sleep "$wait_seconds"
                 continue
               fi
+              if [ "$status" = "403" ]; then
+                echo "FORBIDDEN: $method $url was refused with HTTP 403" >&2
+                echo "Response body: $body" >&2
+                return "$GH_ADMIN_API_FORBIDDEN_EXIT_CODE"
+              fi
               echo "FATAL: non-rate-limit error on $method $url" >&2
               echo "HTTP status: $status" >&2
               echo "Response body: $body" >&2
@@ -243,34 +249,87 @@ jobs:
         run: |
           source /tmp/gh_admin_api.sh
           ORG_NAME="${{ env.ORG_NAME }}"
-          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
-          for REPO in $REPO_LIST; do
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isPrivate,isFork | jq -r '.[] | select(.isArchived == false) | [.name, (.isPrivate | tostring), (.isFork | tostring)] | @tsv')
+          FAILED_REPOS=""
+          while IFS=$'\t' read -r REPO IS_PRIVATE IS_FORK; do
+            [ -z "$REPO" ] && continue
             echo "Updating merge settings for $REPO"
-            gh_admin_api PATCH "https://api.github.com/repos/$ORG_NAME/$REPO" '{ "delete_branch_on_merge": true, "allow_auto_merge": true, "allow_merge_commit": false, "allow_rebase_merge": false, "allow_squash_merge": true }' "200" > /dev/null || { echo "FATAL: failed to update merge settings for $REPO"; exit 1; }
+            gh_admin_api PATCH "https://api.github.com/repos/$ORG_NAME/$REPO" '{ "delete_branch_on_merge": true, "allow_auto_merge": true, "allow_merge_commit": false, "allow_rebase_merge": false, "allow_squash_merge": true }' "200" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
+              if [ "$REQUEST_EXIT_CODE" -eq "$GH_ADMIN_API_FORBIDDEN_EXIT_CODE" ] && [ "$IS_PRIVATE" = "true" ] && [ "$IS_FORK" = "true" ]; then
+                echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"
+                sleep 30s
+                continue
+              fi
+              echo "WARNING: failed to update merge settings for $REPO; continuing with the remaining repositories"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 30s
+              continue
+            fi
             echo "Squash-only merge settings updated for $REPO"
             sleep 30s
-          done
+          done <<< "$REPO_LIST"
+          if [ -n "$FAILED_REPOS" ]; then
+            echo "FATAL: failed to update merge settings for the following repositories:"
+            for FAILED_REPO in $FAILED_REPOS; do
+              echo "  - $FAILED_REPO"
+            done
+            exit 1
+          fi
       - name: Update branch protection settings for all repositories
+        if: ${{ !cancelled() }}
         run: |
           source /tmp/gh_admin_api.sh
           ORG_NAME="${{ env.ORG_NAME }}"
-          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,defaultBranchRef | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | [.name, .defaultBranchRef.name] | @tsv')
-          while IFS=$'\t' read -r REPO DEFAULT_BRANCH; do
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isPrivate,isFork,defaultBranchRef | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | [.name, (.isPrivate | tostring), (.isFork | tostring), .defaultBranchRef.name] | @tsv')
+          BRANCH_PROTECTION_PAYLOAD='{ "required_status_checks": { "strict": false, "contexts": ["test", "format", "commit-lint", "create_and_enable_automerge", "Check linked issues in pull requests", "umino-job"] }, "enforce_admins": false, "required_pull_request_reviews": { "required_approving_review_count": 1, "require_code_owner_reviews": true }, "restrictions": null, "required_linear_history": false, "allow_force_pushes": false, "allow_deletions": false, "required_conversation_resolution": true }'
+          REQUIRED_CONTEXTS="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -r '.required_status_checks.contexts | join(", ")')"
+          # termux-app has classic branch protection disabled repository-wide because its default branch is guarded by a repository ruleset instead of classic branch protection, so this endpoint can never succeed there.
+          RULESET_PROTECTED_REPOSITORIES="termux-app"
+          FAILED_REPOS=""
+          while IFS=$'\t' read -r REPO IS_PRIVATE IS_FORK DEFAULT_BRANCH; do
             [ -z "$REPO" ] && continue
+            case " $RULESET_PROTECTED_REPOSITORIES " in
+              *" $REPO "*)
+                echo "EXPECTED SKIP: $REPO guards its default branch with a repository ruleset instead of classic branch protection, so classic branch protection is disabled repository-wide there"
+                continue
+                ;;
+            esac
             if [ -z "$DEFAULT_BRANCH" ]; then
-              echo "FATAL: could not resolve default branch for $REPO"
-              exit 1
+              echo "WARNING: could not resolve default branch for $REPO; continuing with the remaining repositories"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              continue
             fi
             echo "Updating branch protection for $REPO on default branch $DEFAULT_BRANCH"
-            gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/branches/$DEFAULT_BRANCH/protection" '{ "required_status_checks": { "strict": false, "contexts": ["test", "format", "commit-lint", "create_and_enable_automerge", "Check linked issues in pull requests", "umino-job"] }, "enforce_admins": false, "required_pull_request_reviews": { "required_approving_review_count": 1, "require_code_owner_reviews": true }, "restrictions": null, "required_linear_history": false, "allow_force_pushes": false, "allow_deletions": false, "required_conversation_resolution": true }' "200" > /dev/null || { echo "FATAL: failed to update branch protection for $REPO"; exit 1; }
+            gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/branches/$DEFAULT_BRANCH/protection" "$BRANCH_PROTECTION_PAYLOAD" "200" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
+              if [ "$REQUEST_EXIT_CODE" -eq "$GH_ADMIN_API_FORBIDDEN_EXIT_CODE" ] && [ "$IS_PRIVATE" = "true" ] && [ "$IS_FORK" = "true" ]; then
+                echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"
+                sleep 30s
+                continue
+              fi
+              echo "WARNING: failed to update branch protection for $REPO; continuing with the remaining repositories"
+              echo "WARNING: $REPO must report every required status check context: $REQUIRED_CONTEXTS"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 30s
+              continue
+            fi
             echo "Branch protection settings updated for $REPO"
             sleep 30s
           done <<< "$REPO_LIST"
+          if [ -n "$FAILED_REPOS" ]; then
+            echo "FATAL: failed to update branch protection for the following repositories:"
+            for FAILED_REPO in $FAILED_REPOS; do
+              echo "  - $FAILED_REPO"
+            done
+            exit 1
+          fi
       - name: Create or update Copilot code review ruleset for all repositories
+        if: ${{ !cancelled() }}
         run: |
           source /tmp/gh_admin_api.sh
           ORG_NAME="${{ env.ORG_NAME }}"
-          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | .name')
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isPrivate,isFork | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | [.name, (.isPrivate | tostring), (.isFork | tostring)] | @tsv')
           RULESET_NAME="copilot-code-review"
           RULESET_PAYLOAD='{
             "name": "copilot-code-review",
@@ -279,17 +338,48 @@ jobs:
             "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
             "rules": [ { "type": "copilot_code_review", "parameters": { "review_draft_pull_requests": false, "review_on_push": true } } ]
           }'
-          for REPO in $REPO_LIST; do
+          FAILED_REPOS=""
+          while IFS=$'\t' read -r REPO IS_PRIVATE IS_FORK; do
+            [ -z "$REPO" ] && continue
             echo "Processing Copilot code review ruleset for $REPO"
-            EXISTING_RULESETS="$(gh_admin_api GET "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "" "200")" || { echo "FATAL: failed to list rulesets for $REPO"; exit 1; }
+            EXISTING_RULESETS="$(gh_admin_api GET "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "" "200")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
+              if [ "$REQUEST_EXIT_CODE" -eq "$GH_ADMIN_API_FORBIDDEN_EXIT_CODE" ] && [ "$IS_PRIVATE" = "true" ] && [ "$IS_FORK" = "true" ]; then
+                echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"
+                sleep 30s
+                continue
+              fi
+              echo "WARNING: failed to list rulesets for $REPO; continuing with the remaining repositories"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 30s
+              continue
+            fi
             RULESET_ID="$(printf '%s' "$EXISTING_RULESETS" | jq -r --arg name "$RULESET_NAME" 'if type == "array" then (.[] | select(.name == $name) | .id) else empty end' | head -n1)"
             if [ -n "$RULESET_ID" ] && [ "$RULESET_ID" != "null" ]; then
               echo "Updating existing ruleset $RULESET_ID for $REPO"
-              gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets/$RULESET_ID" "$RULESET_PAYLOAD" "200" > /dev/null || { echo "FATAL: failed to update ruleset for $REPO"; exit 1; }
+              gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets/$RULESET_ID" "$RULESET_PAYLOAD" "200" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             else
               echo "Creating new ruleset for $REPO"
-              gh_admin_api POST "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "$RULESET_PAYLOAD" "200 201" > /dev/null || { echo "FATAL: failed to create ruleset for $REPO"; exit 1; }
+              gh_admin_api POST "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "$RULESET_PAYLOAD" "200 201" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            fi
+            if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
+              if [ "$REQUEST_EXIT_CODE" -eq "$GH_ADMIN_API_FORBIDDEN_EXIT_CODE" ] && [ "$IS_PRIVATE" = "true" ] && [ "$IS_FORK" = "true" ]; then
+                echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"
+                sleep 30s
+                continue
+              fi
+              echo "WARNING: failed to write the Copilot code review ruleset for $REPO; continuing with the remaining repositories"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 30s
+              continue
             fi
             echo "Copilot code review ruleset configured for $REPO"
             sleep 30s
-          done
+          done <<< "$REPO_LIST"
+          if [ -n "$FAILED_REPOS" ]; then
+            echo "FATAL: failed to configure the Copilot code review ruleset for the following repositories:"
+            for FAILED_REPO in $FAILED_REPOS; do
+              echo "  - $FAILED_REPO"
+            done
+            exit 1
+          fi

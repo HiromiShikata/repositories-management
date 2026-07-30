@@ -100,6 +100,9 @@ const repositoryConfigEnvironment: Record<string, string> = Object.fromEntries(
   ),
 );
 
+const planRestrictionResponseBody =
+  '{"message": "Upgrade to GitHub Pro or make this repository public to enable this feature."}';
+
 const ghStubSource = `#!/usr/bin/env bash
 set -euo pipefail
 if [ "\${1:-}" = "repo" ] && [ "\${2:-}" = "list" ]; then
@@ -170,11 +173,41 @@ jq -cn \\
 if [ -n "$header_file" ]; then
   printf 'HTTP/2 200\\r\\nx-ratelimit-remaining: 4999\\r\\nx-ratelimit-reset: 9999999999\\r\\n\\r\\n' > "$header_file"
 fi
+status="200"
 if [ "$method" = "GET" ]; then
-  printf '%s\\n%s' "$(cat "$STUB_GET_RESPONSE_BODY")" '200'
+  response_body="$(cat "$STUB_GET_RESPONSE_BODY")"
 else
-  printf '%s\\n%s' '{}' '200'
+  response_body='{}'
 fi
+for plan_gated_repository in $STUB_PLAN_GATED_REPOSITORIES; do
+  case "$request_url" in
+    *"/repos/$STUB_ORGANIZATION_NAME/$plan_gated_repository" | *"/repos/$STUB_ORGANIZATION_NAME/$plan_gated_repository/"*)
+      status="403"
+      response_body='${planRestrictionResponseBody}'
+      ;;
+  esac
+done
+server_error_methods_apply="false"
+if [ -z "$STUB_SERVER_ERROR_METHODS" ]; then
+  server_error_methods_apply="true"
+else
+  for server_error_method in $STUB_SERVER_ERROR_METHODS; do
+    if [ "$server_error_method" = "$method" ]; then
+      server_error_methods_apply="true"
+    fi
+  done
+fi
+if [ "$server_error_methods_apply" = "true" ]; then
+  for server_error_repository in $STUB_SERVER_ERROR_REPOSITORIES; do
+    case "$request_url" in
+      *"/repos/$STUB_ORGANIZATION_NAME/$server_error_repository" | *"/repos/$STUB_ORGANIZATION_NAME/$server_error_repository/"*)
+        status="500"
+        response_body='{"message": "Server Error"}'
+        ;;
+    esac
+  done
+fi
+printf '%s\\n%s' "$response_body" "$status"
 `;
 
 const sleepStubSource = `#!/usr/bin/env bash
@@ -184,6 +217,8 @@ exit 0
 type RepositoryListEntry = {
   name: string;
   isArchived: boolean;
+  isPrivate: boolean;
+  isFork: boolean;
   defaultBranchRef: { name: string } | null;
 };
 
@@ -228,11 +263,23 @@ const parseRecordedRequest = (loggedLine: string): RecordedRequest => {
 
 const emptyRulesetListResponse = '[]';
 
-const runStepScripts = (
-  stepNames: string[],
-  repositories: RepositoryListEntry[],
-  getResponseBody: string = emptyRulesetListResponse,
-): StepRunResult => {
+type StepRunRequest = {
+  stepNames: string[];
+  repositories: RepositoryListEntry[];
+  getResponseBody?: string;
+  planGatedRepositories?: string[];
+  serverErrorRepositories?: string[];
+  serverErrorMethods?: string[];
+};
+
+const runStepScripts = ({
+  stepNames,
+  repositories,
+  getResponseBody = emptyRulesetListResponse,
+  planGatedRepositories = [],
+  serverErrorRepositories = [],
+  serverErrorMethods = [],
+}: StepRunRequest): StepRunResult => {
   const sandbox = fs.mkdtempSync(
     path.join(os.tmpdir(), 'repositories-management-workflow-'),
   );
@@ -269,6 +316,10 @@ const runStepScripts = (
       STUB_REPOSITORY_LIST_JSON: repositoryListPath,
       STUB_CURL_LOG: curlLogPath,
       STUB_GET_RESPONSE_BODY: getResponseBodyPath,
+      STUB_ORGANIZATION_NAME: organizationName,
+      STUB_PLAN_GATED_REPOSITORIES: planGatedRepositories.join(' '),
+      STUB_SERVER_ERROR_REPOSITORIES: serverErrorRepositories.join(' '),
+      STUB_SERVER_ERROR_METHODS: serverErrorMethods.join(' '),
     },
   });
 
@@ -286,13 +337,20 @@ const runStepScripts = (
 };
 
 const runStepScriptsExpectingSuccess = (
-  stepNames: string[],
-  repositories: RepositoryListEntry[],
-  getResponseBody: string = emptyRulesetListResponse,
+  request: StepRunRequest,
 ): StepRunResult => {
-  const result = runStepScripts(stepNames, repositories, getResponseBody);
+  const result = runStepScripts(request);
   expect(result.output).not.toContain('unexpected gh invocation');
   expect(result.status).toBe(0);
+  return result;
+};
+
+const runStepScriptsExpectingFailure = (
+  request: StepRunRequest,
+): StepRunResult => {
+  const result = runStepScripts(request);
+  expect(result.output).not.toContain('unexpected gh invocation');
+  expect(result.status).not.toBe(0);
   return result;
 };
 
@@ -370,17 +428,58 @@ const expectedRulesetPayload = {
 const mainDefaultBranchRepository: RepositoryListEntry = {
   name: 'repositories-management',
   isArchived: false,
+  isPrivate: false,
+  isFork: false,
   defaultBranchRef: { name: 'main' },
 };
 const masterDefaultBranchRepository: RepositoryListEntry = {
   name: 'deepmerge-yaml',
   isArchived: false,
+  isPrivate: false,
+  isFork: true,
   defaultBranchRef: { name: 'master' },
+};
+const privateForkRepository: RepositoryListEntry = {
+  name: 'private-fork-repository',
+  isArchived: false,
+  isPrivate: true,
+  isFork: true,
+  defaultBranchRef: { name: 'main' },
+};
+const privateNonForkRepository: RepositoryListEntry = {
+  name: 'private-non-fork-repository',
+  isArchived: false,
+  isPrivate: true,
+  isFork: false,
+  defaultBranchRef: { name: 'main' },
+};
+const publicForkRepository: RepositoryListEntry = {
+  name: 'zod-to-entity-definitions',
+  isArchived: false,
+  isPrivate: false,
+  isFork: true,
+  defaultBranchRef: { name: 'main' },
+};
+const rulesetProtectedRepository: RepositoryListEntry = {
+  name: 'termux-app',
+  isArchived: false,
+  isPrivate: false,
+  isFork: true,
+  defaultBranchRef: { name: 'main' },
+};
+const missingStatusCheckContextRepository: RepositoryListEntry = {
+  name: 'repository-missing-required-status-checks',
+  isArchived: false,
+  isPrivate: true,
+  isFork: false,
+  defaultBranchRef: { name: 'main' },
 };
 const twoRepositories: RepositoryListEntry[] = [
   mainDefaultBranchRepository,
   masterDefaultBranchRepository,
 ];
+const requiredStatusCheckContexts =
+  expectedBranchProtectionPayload.required_status_checks.contexts;
 
 describe('repositories-management.yml workflow', () => {
   test('merge settings enforcement targets test-* repositories', () => {
@@ -400,10 +499,10 @@ describe('repositories-management.yml workflow', () => {
 
 describe('repository-config admin API credential', () => {
   test('merge settings requests authenticate with the personal access token', () => {
-    const result = runStepScriptsExpectingSuccess(
-      [helperStepName, mergeSettingsStepName],
-      twoRepositories,
-    );
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, mergeSettingsStepName],
+      repositories: twoRepositories,
+    });
     expect(result.requests).toHaveLength(2);
     expect(result.requests.map((request) => request.authorization)).toEqual([
       `token ${patCredential}`,
@@ -412,10 +511,10 @@ describe('repository-config admin API credential', () => {
   });
 
   test('branch protection requests authenticate with the personal access token', () => {
-    const result = runStepScriptsExpectingSuccess(
-      [helperStepName, branchProtectionStepName],
-      twoRepositories,
-    );
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: twoRepositories,
+    });
     expect(result.requests).toHaveLength(2);
     expect(result.requests.map((request) => request.authorization)).toEqual([
       `token ${patCredential}`,
@@ -424,10 +523,10 @@ describe('repository-config admin API credential', () => {
   });
 
   test('ruleset requests authenticate with the personal access token', () => {
-    const result = runStepScriptsExpectingSuccess(
-      [helperStepName, rulesetStepName],
-      twoRepositories,
-    );
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, rulesetStepName],
+      repositories: twoRepositories,
+    });
     expect(result.requests).toHaveLength(4);
     for (const request of result.requests) {
       expect(request.authorization).toBe(`token ${patCredential}`);
@@ -449,10 +548,10 @@ describe('repository-config admin API credential', () => {
 
 describe('repository-config admin API request payloads', () => {
   test('merge settings requests write squash-only merge settings', () => {
-    const result = runStepScriptsExpectingSuccess(
-      [helperStepName, mergeSettingsStepName],
-      twoRepositories,
-    );
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, mergeSettingsStepName],
+      repositories: twoRepositories,
+    });
     expect(
       result.requests.map((request) => ({
         method: request.method,
@@ -474,10 +573,10 @@ describe('repository-config admin API request payloads', () => {
   });
 
   test('branch protection requests write the review, force-push and conversation rules', () => {
-    const result = runStepScriptsExpectingSuccess(
-      [helperStepName, branchProtectionStepName],
-      twoRepositories,
-    );
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: twoRepositories,
+    });
     expect(
       result.requests.map((request) => ({
         method: request.method,
@@ -499,10 +598,10 @@ describe('repository-config admin API request payloads', () => {
   });
 
   test('ruleset creation writes the active Copilot code review ruleset', () => {
-    const result = runStepScriptsExpectingSuccess(
-      [helperStepName, rulesetStepName],
-      [mainDefaultBranchRepository],
-    );
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, rulesetStepName],
+      repositories: [mainDefaultBranchRepository],
+    });
     expect(
       result.requests.map((request) => ({
         method: request.method,
@@ -526,14 +625,14 @@ describe('repository-config admin API request payloads', () => {
 
   test('ruleset update writes the active Copilot code review ruleset to the existing ruleset id', () => {
     const existingRulesetId = 4242;
-    const result = runStepScriptsExpectingSuccess(
-      [helperStepName, rulesetStepName],
-      [mainDefaultBranchRepository],
-      JSON.stringify([
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, rulesetStepName],
+      repositories: [mainDefaultBranchRepository],
+      getResponseBody: JSON.stringify([
         { id: existingRulesetId, name: 'copilot-code-review' },
         { id: 7, name: 'unrelated-ruleset' },
       ]),
-    );
+    });
     expect(result.requests.map((request) => request.method)).toEqual([
       'GET',
       'PUT',
@@ -547,10 +646,10 @@ describe('repository-config admin API request payloads', () => {
 
 describe('repository-config branch protection target branch', () => {
   test('protects the actual default branch of every repository', () => {
-    const result = runStepScriptsExpectingSuccess(
-      [helperStepName, branchProtectionStepName],
-      twoRepositories,
-    );
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: twoRepositories,
+    });
     expect(result.requests.map((request) => request.url)).toEqual([
       protectionUrl('repositories-management', 'main'),
       protectionUrl('deepmerge-yaml', 'master'),
@@ -558,52 +657,279 @@ describe('repository-config branch protection target branch', () => {
   });
 
   test('protects the master branch of a repository whose default branch is master', () => {
-    const result = runStepScriptsExpectingSuccess(
-      [helperStepName, branchProtectionStepName],
-      [masterDefaultBranchRepository],
-    );
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [masterDefaultBranchRepository],
+    });
     expect(result.requests.map((request) => request.url)).toEqual([
       protectionUrl('deepmerge-yaml', 'master'),
     ]);
   });
 
-  test('fails loudly when a repository default branch cannot be resolved', () => {
-    const result = runStepScripts(
-      [helperStepName, branchProtectionStepName],
-      [
+  test('fails loudly when a repository default branch cannot be resolved, after protecting the remaining repositories', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [
         {
           name: 'freshly-created-repository',
           isArchived: false,
+          isPrivate: false,
+          isFork: false,
           defaultBranchRef: null,
         },
+        masterDefaultBranchRepository,
       ],
-    );
-    expect(result.status).not.toBe(0);
+    });
     expect(result.output).toContain(
-      'FATAL: could not resolve default branch for freshly-created-repository',
+      'WARNING: could not resolve default branch for freshly-created-repository',
     );
-    expect(result.requests).toHaveLength(0);
+    expect(result.output).toContain('  - freshly-created-repository');
+    expect(result.requests.map((request) => request.url)).toEqual([
+      protectionUrl('deepmerge-yaml', 'master'),
+    ]);
   });
 
   test('leaves archived and test- repositories unprotected', () => {
-    const result = runStepScriptsExpectingSuccess(
-      [helperStepName, branchProtectionStepName],
-      [
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [
         {
           name: 'test-sandbox',
           isArchived: false,
+          isPrivate: false,
+          isFork: false,
           defaultBranchRef: { name: 'main' },
         },
         {
           name: 'retired-repository',
           isArchived: true,
+          isPrivate: false,
+          isFork: false,
           defaultBranchRef: { name: 'main' },
         },
         masterDefaultBranchRepository,
       ],
-    );
+    });
     expect(result.requests.map((request) => request.url)).toEqual([
       protectionUrl('deepmerge-yaml', 'master'),
     ]);
+  });
+});
+
+describe('repository-config fault tolerance across the fleet', () => {
+  test('merge settings continues past a failing repository and fails the step afterwards', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, mergeSettingsStepName],
+      repositories: [
+        privateNonForkRepository,
+        mainDefaultBranchRepository,
+        publicForkRepository,
+      ],
+      serverErrorRepositories: [
+        privateNonForkRepository.name,
+        publicForkRepository.name,
+      ],
+    });
+    expect(result.requests.map((request) => request.url)).toEqual([
+      repositoryUrl(privateNonForkRepository.name),
+      repositoryUrl(mainDefaultBranchRepository.name),
+      repositoryUrl(publicForkRepository.name),
+    ]);
+    expect(result.output).toContain(
+      `Squash-only merge settings updated for ${mainDefaultBranchRepository.name}`,
+    );
+    expect(result.output).not.toContain(
+      `Squash-only merge settings updated for ${privateNonForkRepository.name}`,
+    );
+    expect(result.output).not.toContain(
+      `Squash-only merge settings updated for ${publicForkRepository.name}`,
+    );
+    expect(result.output).toContain(`  - ${privateNonForkRepository.name}`);
+    expect(result.output).toContain(`  - ${publicForkRepository.name}`);
+  });
+
+  test('branch protection continues past a failing repository and fails the step afterwards', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [privateNonForkRepository, masterDefaultBranchRepository],
+      serverErrorRepositories: [privateNonForkRepository.name],
+    });
+    expect(result.requests.map((request) => request.url)).toEqual([
+      protectionUrl(privateNonForkRepository.name, 'main'),
+      protectionUrl(masterDefaultBranchRepository.name, 'master'),
+    ]);
+    expect(result.output).toContain(
+      `Branch protection settings updated for ${masterDefaultBranchRepository.name}`,
+    );
+    expect(result.output).not.toContain(
+      `Branch protection settings updated for ${privateNonForkRepository.name}`,
+    );
+    expect(result.output).toContain(`  - ${privateNonForkRepository.name}`);
+  });
+
+  test('ruleset configuration continues past a failing repository and fails the step afterwards', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, rulesetStepName],
+      repositories: [privateNonForkRepository, mainDefaultBranchRepository],
+      serverErrorRepositories: [privateNonForkRepository.name],
+    });
+    expect(result.requests.map((request) => request.url)).toEqual([
+      rulesetsUrl(privateNonForkRepository.name),
+      rulesetsUrl(mainDefaultBranchRepository.name),
+      rulesetsUrl(mainDefaultBranchRepository.name),
+    ]);
+    expect(result.output).toContain(
+      `Copilot code review ruleset configured for ${mainDefaultBranchRepository.name}`,
+    );
+    expect(result.output).not.toContain(
+      `Copilot code review ruleset configured for ${privateNonForkRepository.name}`,
+    );
+    expect(result.output).toContain(`  - ${privateNonForkRepository.name}`);
+  });
+
+  test('a failing ruleset write on an existing ruleset is aggregated rather than aborting the loop', () => {
+    const existingRulesetId = 4242;
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, rulesetStepName],
+      repositories: [privateNonForkRepository, mainDefaultBranchRepository],
+      getResponseBody: JSON.stringify([
+        { id: existingRulesetId, name: 'copilot-code-review' },
+      ]),
+      serverErrorRepositories: [privateNonForkRepository.name],
+      serverErrorMethods: ['PUT'],
+    });
+    expect(result.requests.map((request) => request.method)).toEqual([
+      'GET',
+      'PUT',
+      'GET',
+      'PUT',
+    ]);
+    expect(result.output).toContain(
+      `Copilot code review ruleset configured for ${mainDefaultBranchRepository.name}`,
+    );
+    expect(result.output).toContain(`  - ${privateNonForkRepository.name}`);
+  });
+
+  test('every step after the first loop runs even when an earlier step failed', () => {
+    for (const stepName of [branchProtectionStepName, rulesetStepName]) {
+      expect(extractStepBlock(stepName)).toContain('if: ${{ !cancelled() }}');
+    }
+  });
+
+  test('no step opts out of failing the job', () => {
+    expect(extractJobBlock(repositoryConfigJobName)).not.toContain(
+      'continue-on-error',
+    );
+  });
+});
+
+describe('repository-config expected skips that can never succeed', () => {
+  test('a private fork refused with the plan restriction is skipped and the step still succeeds', () => {
+    for (const stepName of [
+      mergeSettingsStepName,
+      branchProtectionStepName,
+      rulesetStepName,
+    ]) {
+      const result = runStepScriptsExpectingSuccess({
+        stepNames: [helperStepName, stepName],
+        repositories: [privateForkRepository, mainDefaultBranchRepository],
+        planGatedRepositories: [privateForkRepository.name],
+      });
+      expect(result.output).toContain(
+        `EXPECTED SKIP: ${privateForkRepository.name} is a private fork`,
+      );
+      expect(
+        result.requests.some((request) =>
+          request.url.includes(`/${mainDefaultBranchRepository.name}`),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  test('a private non-fork refused with the same plan restriction body still fails the step', () => {
+    for (const stepName of [
+      mergeSettingsStepName,
+      branchProtectionStepName,
+      rulesetStepName,
+    ]) {
+      const result = runStepScriptsExpectingFailure({
+        stepNames: [helperStepName, stepName],
+        repositories: [privateNonForkRepository],
+        planGatedRepositories: [privateNonForkRepository.name],
+      });
+      expect(result.output).toContain(planRestrictionResponseBody);
+      expect(result.output).not.toContain('EXPECTED SKIP');
+      expect(result.output).toContain(`  - ${privateNonForkRepository.name}`);
+    }
+  });
+
+  test('a public fork refused with the same plan restriction body still fails the step', () => {
+    for (const stepName of [
+      mergeSettingsStepName,
+      branchProtectionStepName,
+      rulesetStepName,
+    ]) {
+      const result = runStepScriptsExpectingFailure({
+        stepNames: [helperStepName, stepName],
+        repositories: [publicForkRepository],
+        planGatedRepositories: [publicForkRepository.name],
+      });
+      expect(result.output).not.toContain('EXPECTED SKIP');
+      expect(result.output).toContain(`  - ${publicForkRepository.name}`);
+    }
+  });
+
+  test('a private fork failing for any reason other than the plan restriction still fails the step', () => {
+    for (const stepName of [
+      mergeSettingsStepName,
+      branchProtectionStepName,
+      rulesetStepName,
+    ]) {
+      const result = runStepScriptsExpectingFailure({
+        stepNames: [helperStepName, stepName],
+        repositories: [privateForkRepository],
+        serverErrorRepositories: [privateForkRepository.name],
+      });
+      expect(result.output).not.toContain('EXPECTED SKIP');
+      expect(result.output).toContain(`  - ${privateForkRepository.name}`);
+    }
+  });
+
+  test('the ruleset-protected repository is skipped by branch protection only', () => {
+    const protectionResult = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [rulesetProtectedRepository, mainDefaultBranchRepository],
+    });
+    expect(protectionResult.output).toContain(
+      `EXPECTED SKIP: ${rulesetProtectedRepository.name} guards its default branch with a repository ruleset instead of classic branch protection`,
+    );
+    expect(protectionResult.requests.map((request) => request.url)).toEqual([
+      protectionUrl(mainDefaultBranchRepository.name, 'main'),
+    ]);
+
+    const rulesetResult = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, rulesetStepName],
+      repositories: [rulesetProtectedRepository],
+    });
+    expect(rulesetResult.output).not.toContain('EXPECTED SKIP');
+    expect(rulesetResult.requests.map((request) => request.url)).toEqual([
+      rulesetsUrl(rulesetProtectedRepository.name),
+      rulesetsUrl(rulesetProtectedRepository.name),
+    ]);
+  });
+
+  test('a repository that does not report the required status check contexts is never skipped', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [missingStatusCheckContextRepository],
+      serverErrorRepositories: [missingStatusCheckContextRepository.name],
+    });
+    expect(result.output).not.toContain('EXPECTED SKIP');
+    expect(result.output).toContain(
+      `  - ${missingStatusCheckContextRepository.name}`,
+    );
+    for (const context of requiredStatusCheckContexts) {
+      expect(result.output).toContain(context);
+    }
   });
 });
