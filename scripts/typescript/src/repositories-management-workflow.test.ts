@@ -119,6 +119,35 @@ if [ "\${1:-}" = "repo" ] && [ "\${2:-}" = "list" ]; then
     "$STUB_REPOSITORY_LIST_JSON"
   exit 0
 fi
+if [ "\${1:-}" = "api" ]; then
+  endpoint="\${2:-}"
+  jq_expression=""
+  previous=""
+  for argument in "$@"; do
+    if [ "$previous" = "--jq" ]; then
+      jq_expression="$argument"
+    fi
+    previous="$argument"
+  done
+  printf '%s\\n' "$endpoint" >> "$STUB_GH_API_LOG"
+  case "$endpoint" in
+    repos/*/pulls*)
+      repository="$(printf '%s' "$endpoint" | sed -E 's#^repos/[^/]+/([^/]+)/pulls.*#\\1#')"
+      jq -c --arg repository "$repository" \\
+        '(.[$repository] // []) | to_entries | map({head: {sha: ($repository + "-pull-request-" + (.key | tostring))}})' \\
+        "$STUB_OPEN_PULL_REQUEST_CHECK_RUNS_JSON" | jq -r "$jq_expression"
+      exit 0
+      ;;
+    repos/*/commits/*/check-runs*)
+      repository="$(printf '%s' "$endpoint" | sed -E 's#^repos/[^/]+/([^/]+)/commits/.*#\\1#')"
+      pull_request_index="$(printf '%s' "$endpoint" | sed -E 's#.*-pull-request-([0-9]+)/check-runs.*#\\1#')"
+      jq -c --arg repository "$repository" --argjson index "$pull_request_index" \\
+        '{check_runs: (((.[$repository] // [])[$index]) // [] | map({name: .}))}' \\
+        "$STUB_OPEN_PULL_REQUEST_CHECK_RUNS_JSON" | jq -r "$jq_expression"
+      exit 0
+      ;;
+  esac
+fi
 echo "unexpected gh invocation: $*" >&2
 exit 1
 `;
@@ -175,10 +204,23 @@ if [ -n "$header_file" ]; then
 fi
 status="200"
 if [ "$method" = "GET" ]; then
-  response_body="$(cat "$STUB_GET_RESPONSE_BODY")"
+  case "$request_url" in
+    */protection) response_body="$(cat "$STUB_PROTECTION_RESPONSE_BODY")" ;;
+    *) response_body="$(cat "$STUB_GET_RESPONSE_BODY")" ;;
+  esac
 else
   response_body='{}'
 fi
+for unprotected_repository in $STUB_UNPROTECTED_REPOSITORIES; do
+  case "$request_url" in
+    *"/repos/$STUB_ORGANIZATION_NAME/$unprotected_repository/branches/"*"/protection")
+      if [ "$method" = "GET" ]; then
+        status="404"
+        response_body='{"message": "Branch not protected", "status": "404"}'
+      fi
+      ;;
+  esac
+done
 for plan_gated_repository in $STUB_PLAN_GATED_REPOSITORIES; do
   case "$request_url" in
     *"/repos/$STUB_ORGANIZATION_NAME/$plan_gated_repository" | *"/repos/$STUB_ORGANIZATION_NAME/$plan_gated_repository/"*)
@@ -233,6 +275,7 @@ type StepRunResult = {
   status: number | null;
   output: string;
   requests: RecordedRequest[];
+  readOnlyEndpoints: string[];
 };
 
 const parseRecordedRequest = (loggedLine: string): RecordedRequest => {
@@ -270,6 +313,9 @@ type StepRunRequest = {
   planGatedRepositories?: string[];
   serverErrorRepositories?: string[];
   serverErrorMethods?: string[];
+  alreadyRequiredContexts?: string[];
+  unprotectedRepositories?: string[];
+  openPullRequestCheckRuns?: Record<string, string[][]>;
 };
 
 const runStepScripts = ({
@@ -279,6 +325,9 @@ const runStepScripts = ({
   planGatedRepositories = [],
   serverErrorRepositories = [],
   serverErrorMethods = [],
+  alreadyRequiredContexts,
+  unprotectedRepositories = [],
+  openPullRequestCheckRuns = {},
 }: StepRunRequest): StepRunResult => {
   const sandbox = fs.mkdtempSync(
     path.join(os.tmpdir(), 'repositories-management-workflow-'),
@@ -298,6 +347,29 @@ const runStepScripts = ({
   fs.writeFileSync(curlLogPath, '');
   const getResponseBodyPath = path.join(sandbox, 'get-response-body.json');
   fs.writeFileSync(getResponseBodyPath, getResponseBody);
+  const protectionResponseBodyPath = path.join(
+    sandbox,
+    'protection-response-body.json',
+  );
+  fs.writeFileSync(
+    protectionResponseBodyPath,
+    JSON.stringify({
+      required_status_checks: {
+        strict: false,
+        contexts: alreadyRequiredContexts ?? requiredStatusCheckContexts,
+      },
+    }),
+  );
+  const openPullRequestCheckRunsPath = path.join(
+    sandbox,
+    'open-pull-request-check-runs.json',
+  );
+  fs.writeFileSync(
+    openPullRequestCheckRunsPath,
+    JSON.stringify(openPullRequestCheckRuns),
+  );
+  const ghApiLogPath = path.join(sandbox, 'gh-api.log');
+  fs.writeFileSync(ghApiLogPath, '');
   const helperPath = path.join(sandbox, 'gh_admin_api.sh');
 
   const script = ['set -e', ...stepNames.map(extractRunScript)]
@@ -316,8 +388,12 @@ const runStepScripts = ({
       STUB_REPOSITORY_LIST_JSON: repositoryListPath,
       STUB_CURL_LOG: curlLogPath,
       STUB_GET_RESPONSE_BODY: getResponseBodyPath,
+      STUB_PROTECTION_RESPONSE_BODY: protectionResponseBodyPath,
+      STUB_OPEN_PULL_REQUEST_CHECK_RUNS_JSON: openPullRequestCheckRunsPath,
+      STUB_GH_API_LOG: ghApiLogPath,
       STUB_ORGANIZATION_NAME: organizationName,
       STUB_PLAN_GATED_REPOSITORIES: planGatedRepositories.join(' '),
+      STUB_UNPROTECTED_REPOSITORIES: unprotectedRepositories.join(' '),
       STUB_SERVER_ERROR_REPOSITORIES: serverErrorRepositories.join(' '),
       STUB_SERVER_ERROR_METHODS: serverErrorMethods.join(' '),
     },
@@ -333,6 +409,10 @@ const runStepScripts = ({
     status: outcome.status,
     output: `${outcome.stdout}${outcome.stderr}`,
     requests,
+    readOnlyEndpoints: fs
+      .readFileSync(ghApiLogPath, 'utf8')
+      .split('\n')
+      .filter((line) => line.length > 0),
   };
 };
 
@@ -358,6 +438,12 @@ const requestPayload = (request: RecordedRequest): unknown => {
   expect(request.data).not.toBe('');
   return JSON.parse(request.data);
 };
+
+const writeRequests = (result: StepRunResult): RecordedRequest[] =>
+  result.requests.filter((request) => request.method !== 'GET');
+
+const requestSummaries = (result: StepRunResult): string[] =>
+  result.requests.map((request) => `${request.method} ${request.url}`);
 
 const helperStepName = 'Prepare rate-limit-aware admin API helper';
 const mergeSettingsStepName = 'Update repository settings for all repositories';
@@ -537,11 +623,10 @@ describe('repository-config admin API credential', () => {
       stepNames: [helperStepName, branchProtectionStepName],
       repositories: twoRepositories,
     });
-    expect(result.requests).toHaveLength(2);
-    expect(result.requests.map((request) => request.authorization)).toEqual([
-      `token ${patCredential}`,
-      `token ${patCredential}`,
-    ]);
+    expect(writeRequests(result)).toHaveLength(2);
+    for (const request of result.requests) {
+      expect(request.authorization).toBe(`token ${patCredential}`);
+    }
   });
 
   test('ruleset requests authenticate with the personal access token', () => {
@@ -600,7 +685,7 @@ describe('repository-config admin API request payloads', () => {
       repositories: twoRepositories,
     });
     expect(
-      result.requests.map((request) => ({
+      writeRequests(result).map((request) => ({
         method: request.method,
         url: request.url,
         payload: requestPayload(request),
@@ -672,7 +757,7 @@ describe('repository-config branch protection target branch', () => {
       stepNames: [helperStepName, branchProtectionStepName],
       repositories: twoRepositories,
     });
-    expect(result.requests.map((request) => request.url)).toEqual([
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
       protectionUrl('repositories-management', 'main'),
       protectionUrl(masterDefaultBranchRepository.name, 'master'),
     ]);
@@ -683,7 +768,7 @@ describe('repository-config branch protection target branch', () => {
       stepNames: [helperStepName, branchProtectionStepName],
       repositories: [masterDefaultBranchRepository],
     });
-    expect(result.requests.map((request) => request.url)).toEqual([
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
       protectionUrl(masterDefaultBranchRepository.name, 'master'),
     ]);
   });
@@ -706,7 +791,7 @@ describe('repository-config branch protection target branch', () => {
       'WARNING: could not resolve default branch for freshly-created-repository',
     );
     expect(result.output).toContain('  - freshly-created-repository');
-    expect(result.requests.map((request) => request.url)).toEqual([
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
       protectionUrl(masterDefaultBranchRepository.name, 'master'),
     ]);
   });
@@ -732,7 +817,7 @@ describe('repository-config branch protection target branch', () => {
         masterDefaultBranchRepository,
       ],
     });
-    expect(result.requests.map((request) => request.url)).toEqual([
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
       protectionUrl(masterDefaultBranchRepository.name, 'master'),
     ]);
   });
@@ -776,9 +861,10 @@ describe('repository-config fault tolerance across the fleet', () => {
       repositories: [privateNonForkRepository, masterDefaultBranchRepository],
       serverErrorRepositories: [privateNonForkRepository.name],
     });
-    expect(result.requests.map((request) => request.url)).toEqual([
-      protectionUrl(privateNonForkRepository.name, 'main'),
-      protectionUrl(masterDefaultBranchRepository.name, 'master'),
+    expect(requestSummaries(result)).toEqual([
+      `GET ${protectionUrl(privateNonForkRepository.name, 'main')}`,
+      `GET ${protectionUrl(masterDefaultBranchRepository.name, 'master')}`,
+      `PUT ${protectionUrl(masterDefaultBranchRepository.name, 'master')}`,
     ]);
     expect(result.output).toContain(
       `Branch protection settings updated for ${masterDefaultBranchRepository.name}`,
@@ -932,8 +1018,9 @@ describe('repository-config expected skips that can never succeed', () => {
     expect(result.output).toContain(
       `EXPECTED SKIP: ${upstreamTrackingForkRepository.name} tracks an upstream project instead of being developed here`,
     );
-    expect(result.requests.map((request) => request.url)).toEqual([
-      protectionUrl(mainDefaultBranchRepository.name, 'main'),
+    expect(requestSummaries(result)).toEqual([
+      `GET ${protectionUrl(mainDefaultBranchRepository.name, 'main')}`,
+      `PUT ${protectionUrl(mainDefaultBranchRepository.name, 'main')}`,
     ]);
   });
 
@@ -982,8 +1069,14 @@ describe('repository-config expected skips that can never succeed', () => {
   test('a repository that does not report the required status check contexts is never skipped', () => {
     const result = runStepScriptsExpectingFailure({
       stepNames: [helperStepName, branchProtectionStepName],
-      repositories: [missingStatusCheckContextRepository],
-      serverErrorRepositories: [missingStatusCheckContextRepository.name],
+      repositories: [
+        missingStatusCheckContextRepository,
+        mainDefaultBranchRepository,
+      ],
+      unprotectedRepositories: [missingStatusCheckContextRepository.name],
+      openPullRequestCheckRuns: {
+        [missingStatusCheckContextRepository.name]: [['build-and-test']],
+      },
     });
     expect(result.output).not.toContain('EXPECTED SKIP');
     expect(result.output).toContain(
@@ -992,5 +1085,419 @@ describe('repository-config expected skips that can never succeed', () => {
     for (const context of requiredStatusCheckContexts) {
       expect(result.output).toContain(context);
     }
+  });
+});
+
+const unprotectedRepository: RepositoryListEntry = {
+  name: 'repository-without-branch-protection',
+  isArchived: false,
+  isPrivate: false,
+  isFork: false,
+  defaultBranchRef: { name: 'main' },
+};
+const contextsMissingFromOwnContinuousIntegration = ['test', 'format'];
+const contextsReportedByEveryRepository = requiredStatusCheckContexts.filter(
+  (context) => !contextsMissingFromOwnContinuousIntegration.includes(context),
+);
+
+describe('repository-config branch protection context-reporting precondition', () => {
+  test('protects an unprotected repository whose every open pull request head reports every required context', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [unprotectedRepository],
+      unprotectedRepositories: [unprotectedRepository.name],
+      openPullRequestCheckRuns: {
+        [unprotectedRepository.name]: [
+          [...requiredStatusCheckContexts, 'secret-scan'],
+          [...requiredStatusCheckContexts],
+        ],
+      },
+    });
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
+      protectionUrl(unprotectedRepository.name, 'main'),
+    ]);
+  });
+
+  test('withholds protection from an unprotected repository whose open pull request head does not report every required context, names the repository and the contexts, and still protects the rest of the fleet', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [unprotectedRepository, mainDefaultBranchRepository],
+      unprotectedRepositories: [unprotectedRepository.name],
+      openPullRequestCheckRuns: {
+        [unprotectedRepository.name]: [
+          [...contextsReportedByEveryRepository, 'build-and-test'],
+        ],
+      },
+    });
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
+      protectionUrl(mainDefaultBranchRepository.name, 'main'),
+    ]);
+    expect(result.output).toContain(
+      `WARNING: not protecting ${unprotectedRepository.name} because requiring a status check context it cannot report would make its every pull request permanently unmergeable`,
+    );
+    expect(result.output).toContain(
+      `WARNING: ${unprotectedRepository.name} neither already requires nor reports on every open pull request head: ${contextsMissingFromOwnContinuousIntegration.join(', ')}`,
+    );
+    expect(result.output).toContain(`  - ${unprotectedRepository.name}`);
+    expect(result.output).not.toContain('EXPECTED SKIP');
+  });
+
+  test('one open pull request head that does not report a required context is enough to withhold protection even when another head reports all of them', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [unprotectedRepository],
+      unprotectedRepositories: [unprotectedRepository.name],
+      openPullRequestCheckRuns: {
+        [unprotectedRepository.name]: [
+          [...requiredStatusCheckContexts],
+          [...contextsReportedByEveryRepository, 'build-and-test'],
+        ],
+      },
+    });
+    expect(writeRequests(result)).toEqual([]);
+    expect(result.output).toContain(
+      `WARNING: ${unprotectedRepository.name} neither already requires nor reports on every open pull request head: ${contextsMissingFromOwnContinuousIntegration.join(', ')}`,
+    );
+  });
+
+  test('withholds protection from an unprotected repository that has no open pull request to establish what it reports', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [unprotectedRepository],
+      unprotectedRepositories: [unprotectedRepository.name],
+    });
+    expect(writeRequests(result)).toEqual([]);
+    expect(result.output).toContain(
+      `WARNING: ${unprotectedRepository.name} neither already requires nor reports on every open pull request head: ${requiredStatusCheckContexts.join(', ')}`,
+    );
+  });
+
+  test('a repository that already requires every context is protected without measuring its pull requests', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [mainDefaultBranchRepository],
+      openPullRequestCheckRuns: {
+        [mainDefaultBranchRepository.name]: [['build-and-test']],
+      },
+    });
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
+      protectionUrl(mainDefaultBranchRepository.name, 'main'),
+    ]);
+    expect(result.readOnlyEndpoints).toEqual([]);
+  });
+
+  test('a repository that already requires only some contexts must report the remaining ones on every open pull request head', () => {
+    const alreadyProtectedRepository = mainDefaultBranchRepository;
+    const withheld = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [alreadyProtectedRepository],
+      alreadyRequiredContexts: contextsReportedByEveryRepository,
+      openPullRequestCheckRuns: {
+        [alreadyProtectedRepository.name]: [['build-and-test']],
+      },
+    });
+    expect(writeRequests(withheld)).toEqual([]);
+    expect(withheld.output).toContain(
+      `WARNING: ${alreadyProtectedRepository.name} neither already requires nor reports on every open pull request head: ${contextsMissingFromOwnContinuousIntegration.join(', ')}`,
+    );
+    const protected_ = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [alreadyProtectedRepository],
+      alreadyRequiredContexts: contextsReportedByEveryRepository,
+      openPullRequestCheckRuns: {
+        [alreadyProtectedRepository.name]: [
+          contextsMissingFromOwnContinuousIntegration,
+        ],
+      },
+    });
+    expect(writeRequests(protected_).map((request) => request.url)).toEqual([
+      protectionUrl(alreadyProtectedRepository.name, 'main'),
+    ]);
+  });
+
+  test('the precondition reads the existing protection of every repository exactly once', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: twoRepositories,
+    });
+    expect(requestSummaries(result)).toEqual([
+      `GET ${protectionUrl(mainDefaultBranchRepository.name, 'main')}`,
+      `PUT ${protectionUrl(mainDefaultBranchRepository.name, 'main')}`,
+      `GET ${protectionUrl(masterDefaultBranchRepository.name, 'master')}`,
+      `PUT ${protectionUrl(masterDefaultBranchRepository.name, 'master')}`,
+    ]);
+  });
+
+  test('a private fork whose existing protection read is refused by the plan gate is skipped without any write', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [privateForkRepository, mainDefaultBranchRepository],
+      planGatedRepositories: [privateForkRepository.name],
+    });
+    expect(result.output).toContain(
+      `EXPECTED SKIP: ${privateForkRepository.name} is a private fork`,
+    );
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
+      protectionUrl(mainDefaultBranchRepository.name, 'main'),
+    ]);
+  });
+});
+
+describe('repository-config refuses to report success having configured nothing', () => {
+  const perRepositoryLoopSteps: [string, string][] = [
+    [mergeSettingsStepName, 'merge settings'],
+    [branchProtectionStepName, 'branch protection'],
+    [rulesetStepName, 'the Copilot code review ruleset'],
+  ];
+
+  describe.each(perRepositoryLoopSteps)(
+    'step "%s"',
+    (stepName, loopSubject) => {
+      test('fails when the repository list resolves to zero repositories', () => {
+        const result = runStepScriptsExpectingFailure({
+          stepNames: [helperStepName, stepName],
+          repositories: [],
+        });
+        expect(result.output).toContain(
+          `FATAL: the repository list for ${loopSubject} resolved to zero repositories, so this run configured nothing`,
+        );
+        expect(result.requests).toEqual([]);
+      });
+
+      test('reports how many repositories it configured', () => {
+        const result = runStepScriptsExpectingSuccess({
+          stepNames: [helperStepName, stepName],
+          repositories: twoRepositories,
+        });
+        expect(result.output).toContain(
+          `Configured 2 of 2 repositories for ${loopSubject}`,
+        );
+      });
+
+      test('fails when every repository in a non-empty list was skipped', () => {
+        const result = runStepScriptsExpectingFailure({
+          stepNames: [helperStepName, stepName],
+          repositories: [privateForkRepository],
+          planGatedRepositories: [privateForkRepository.name],
+        });
+        expect(result.output).toContain(
+          `EXPECTED SKIP: ${privateForkRepository.name} is a private fork`,
+        );
+        expect(result.output).toContain(
+          `FATAL: configured zero of 1 repositories for ${loopSubject}, so this run changed nothing`,
+        );
+      });
+    },
+  );
+});
+
+describe('repository-config shares the fleet loop predicates with every loop', () => {
+  const perRepositoryLoopStepNames = [
+    mergeSettingsStepName,
+    branchProtectionStepName,
+    rulesetStepName,
+  ];
+
+  describe.each(perRepositoryLoopStepNames)('step "%s"', (stepName) => {
+    test('classifies the permanent plan gate refusal through the sourced helper rather than inline', () => {
+      const stepBlock = extractStepBlock(stepName);
+      expect(stepBlock).toContain('is_permanent_plan_gate_refusal');
+      expect(stepBlock).not.toContain('GH_ADMIN_API_FORBIDDEN_EXIT_CODE');
+    });
+
+    test('reports the loop outcome through the sourced helper rather than an inline failure block', () => {
+      const stepBlock = extractStepBlock(stepName);
+      expect(stepBlock).toContain('report_fleet_loop_outcome ');
+      expect(stepBlock).not.toContain('for FAILED_REPO in $FAILED_REPOS');
+    });
+
+    test('throttles each repository with a bounded sleep well under 30 seconds', () => {
+      const stepBlock = extractStepBlock(stepName);
+      const sleeps = stepBlock.match(/sleep (\d+)s/g) ?? [];
+      expect(sleeps.length).toBeGreaterThan(0);
+      for (const sleep of sleeps) {
+        const seconds = Number(sleep.replace(/\D/g, ''));
+        expect(seconds).toBeGreaterThan(0);
+        expect(seconds).toBeLessThanOrEqual(5);
+      }
+    });
+  });
+
+  test('the sourced helper defines the shared plan gate predicate and loop outcome report exactly once', () => {
+    const helperBlock = extractStepBlock(helperStepName);
+    expect(
+      helperBlock.match(/is_permanent_plan_gate_refusal\(\) \{/g),
+    ).toHaveLength(1);
+    expect(helperBlock.match(/report_fleet_loop_outcome\(\) \{/g)).toHaveLength(
+      1,
+    );
+  });
+});
+
+const syncStepName = 'Sync Files to All repositories';
+const syncOrganizationName = 'example-org';
+const syncRepositoryName = 'example-repo';
+const createdPullRequestUrl = `https://github.com/${syncOrganizationName}/${syncRepositoryName}/pull/7`;
+const workflowOpenedPullRequestUrl = `https://github.com/${syncOrganizationName}/${syncRepositoryName}/pull/3`;
+const forkPullRequestUrl = 'https://github.com/outsider/example-repo/pull/9';
+
+const pullRequestResolutionScript = (): string => {
+  const stepBlock = extractStepBlock(syncStepName);
+  const start = stepBlock.indexOf('EXPECTED_PR_URL_PREFIX=');
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = stepBlock.indexOf('\n            cd ..', start);
+  expect(end).toBeGreaterThan(start);
+  return stepBlock
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.replace(/^ {12}/, ''))
+    .join('\n');
+};
+
+const runPullRequestResolution = (
+  ghStub: string,
+): { status: number; output: string } => {
+  const script = [
+    'set -e',
+    'sleep() { echo "slept $*"; }',
+    ghStub,
+    `ORG_NAME=${syncOrganizationName}`,
+    `REPO=${syncRepositoryName}`,
+    'BRANCH_NAME=project-common/update-common-files-20260101000000',
+    'DEFAULT_BRANCH=main',
+    'APP_TOKEN=app-token',
+    'GH_BOT_TOKEN=bot-token',
+    'ACTION_LINK=https://example.invalid/actions/runs/1',
+    pullRequestResolutionScript(),
+  ].join('\n');
+  const outcome = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+  return {
+    status: outcome.status === null ? -1 : outcome.status,
+    output: `${outcome.stdout}${outcome.stderr}`,
+  };
+};
+
+const ghStubCreating = (createdUrl: string): string =>
+  [
+    'gh() {',
+    '  if [ "$1" = "pr" ] && [ "$2" = "create" ]; then',
+    `    echo "${createdUrl}"`,
+    '    return 0',
+    '  fi',
+    '  if [ "$1" = "pr" ] && [ "$2" = "list" ]; then',
+    '    echo "head-branch lookup was performed" >&2',
+    `    echo "${forkPullRequestUrl}"`,
+    '    return 0',
+    '  fi',
+    '  echo "approved $*"',
+    '}',
+  ].join('\n');
+
+const ghStubFailingToCreateAndListing = (fixture: string): string =>
+  [
+    'gh() {',
+    '  if [ "$1" = "pr" ] && [ "$2" = "create" ]; then',
+    '    echo "GraphQL: Resource not accessible by integration (createPullRequest)" >&2',
+    '    return 1',
+    '  fi',
+    '  if [ "$1" = "pr" ] && [ "$2" = "list" ]; then',
+    '    JSON_FIELDS=""',
+    '    JQ_EXPRESSION=""',
+    '    while [ "$#" -gt 0 ]; do',
+    '      case "$1" in',
+    '        --json) JSON_FIELDS="$2"; shift 2 ;;',
+    '        --jq) JQ_EXPRESSION="$2"; shift 2 ;;',
+    '        *) shift ;;',
+    '      esac',
+    '    done',
+    `    LISTED=$(printf '%s' '${fixture}' | jq --arg fields "$JSON_FIELDS" -c '($fields | split(",")) as $requested | [.[] | with_entries(select(.key as $key | $requested | index($key)))]' | jq -r "$JQ_EXPRESSION")`,
+    '    printf \'%s\\n\' "$LISTED"',
+    '    return 0',
+    '  fi',
+    '  echo "approved $*"',
+    '}',
+  ].join('\n');
+
+describe('update-repos sync pull request creation and approval', () => {
+  test('creates the sync pull request against this account repository and its own default branch', () => {
+    const stepBlock = extractStepBlock(syncStepName);
+    expect(stepBlock).toContain(
+      'DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)',
+    );
+    expect(stepBlock).toContain(
+      'gh pr create --repo "$ORG_NAME/$REPO" --base "$DEFAULT_BRANCH" --head "$BRANCH_NAME"',
+    );
+  });
+
+  test('approves the pull request URL the creation returned without any head-branch lookup', () => {
+    const { status, output } = runPullRequestResolution(
+      ghStubCreating(createdPullRequestUrl),
+    );
+    expect(status).toBe(0);
+    expect(output).toContain(`PR_URL: ${createdPullRequestUrl}`);
+    expect(output).toContain(
+      `approved pr review --approve ${createdPullRequestUrl}`,
+    );
+    expect(output).not.toContain('head-branch lookup was performed');
+  });
+
+  test('approves nothing when the created pull request URL is not in this account repository', () => {
+    const { status, output } = runPullRequestResolution(
+      ghStubCreating(forkPullRequestUrl),
+    );
+    expect(status).toBe(0);
+    expect(output).toContain(
+      `Warning: the created pull request URL for ${syncRepositoryName} is not under https://github.com/${syncOrganizationName}/${syncRepositoryName}/pull/`,
+    );
+    expect(output).not.toContain('pr review --approve');
+  });
+
+  test('the fallback lookup approves the same-repository pull request and never a fork one', () => {
+    const { status, output } = runPullRequestResolution(
+      ghStubFailingToCreateAndListing(
+        `[{"url":"${forkPullRequestUrl}","isCrossRepository":true},{"url":"${workflowOpenedPullRequestUrl}","isCrossRepository":false}]`,
+      ),
+    );
+    expect(status).toBe(0);
+    expect(output).toContain(`PR_URL: ${workflowOpenedPullRequestUrl}`);
+    expect(output).toContain(
+      `approved pr review --approve ${workflowOpenedPullRequestUrl}`,
+    );
+    expect(output).not.toContain(forkPullRequestUrl);
+  });
+
+  test('a fork pull request alone on the head branch leaves nothing to approve', () => {
+    const { status, output } = runPullRequestResolution(
+      ghStubFailingToCreateAndListing(
+        `[{"url":"${forkPullRequestUrl}","isCrossRepository":true}]`,
+      ),
+    );
+    expect(status).toBe(0);
+    expect(output).toContain('No open pull request found to approve');
+    expect(output).not.toContain('pr review --approve');
+  });
+
+  test('the fallback lookup asks the API to exclude cross-repository pull requests', () => {
+    expect(extractStepBlock(syncStepName)).toContain(
+      'gh pr list --repo "$ORG_NAME/$REPO" --head "$BRANCH_NAME" --state open --json url,isCrossRepository --jq \'map(select(.isCrossRepository == false)) | .[0].url // ""\'',
+    );
+  });
+
+  test('a failing lookup leaves the pull request unresolved without aborting the repository loop', () => {
+    const { status, output } = runPullRequestResolution(
+      'gh() { echo "gh $*: forced failure" >&2; return 1; }',
+    );
+    expect(status).toBe(0);
+    expect(output).toContain('No open pull request found to approve');
+  });
+
+  test('the final retry attempt of the fallback lookup is not followed by a sleep', () => {
+    const { status, output } = runPullRequestResolution(
+      ghStubFailingToCreateAndListing('[]'),
+    );
+    expect(status).toBe(0);
+    expect(output.match(/^slept /gm) ?? []).toHaveLength(2);
+    expect(output).toContain('(attempt 3 of 3)');
+    expect(output).not.toContain('(attempt 3 of 3); retrying in 10s');
   });
 });

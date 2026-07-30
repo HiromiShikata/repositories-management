@@ -111,15 +111,43 @@ jobs:
             ACTION_RUN_ID=${{ github.run_id }}
             ACTION_LINK="https://github.com/${{ github.repository }}/actions/runs/$ACTION_RUN_ID"
             BRANCH_NAME="project-common/update-common-files-$(date +%Y%m%d%H%M%S)"
+            DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
             git switch -c $BRANCH_NAME
             git remote set-url origin https://x-access-token:$APP_TOKEN@github.com/$ORG_NAME/$REPO.git
             git remote -v
             git remote show origin
             git push origin $BRANCH_NAME
-            PR_OUTPUT=$(GH_TOKEN=$APP_TOKEN gh pr create --head $BRANCH_NAME --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK" 2>&1) || { echo "Warning: Failed to create PR for $REPO (skipping): $PR_OUTPUT"; cd ..; rm -rf $REPO; continue; }
-            PR_URL="$PR_OUTPUT"
-            echo "PR_URL: $PR_URL"
-            GH_TOKEN=$GH_BOT_TOKEN gh pr review --approve "$PR_URL"
+            EXPECTED_PR_URL_PREFIX="https://github.com/$ORG_NAME/$REPO/pull/"
+            PR_URL=""
+            if PR_CREATE_OUTPUT=$(GH_TOKEN=$APP_TOKEN gh pr create --repo "$ORG_NAME/$REPO" --base "$DEFAULT_BRANCH" --head "$BRANCH_NAME" --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK" 2>&1); then
+              PR_URL=$(printf '%s\n' "$PR_CREATE_OUTPUT" | grep -E '^https://github\.com/[^/]+/[^/]+/pull/[0-9]+$' | tail -n 1)
+              case "$PR_URL" in
+                "$EXPECTED_PR_URL_PREFIX"*) ;;
+                *) echo "Warning: the created pull request URL for $REPO is not under $EXPECTED_PR_URL_PREFIX: $PR_CREATE_OUTPUT"; PR_URL="" ;;
+              esac
+            else
+              echo "Warning: Failed to create PR for $REPO, falling back to the pull request opened by the Create PR workflow: $PR_CREATE_OUTPUT"
+              for ATTEMPT in 1 2 3; do
+                PR_URL=$(GH_TOKEN=$APP_TOKEN gh pr list --repo "$ORG_NAME/$REPO" --head "$BRANCH_NAME" --state open --json url,isCrossRepository --jq 'map(select(.isCrossRepository == false)) | .[0].url // ""') || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3)"; PR_URL=""; }
+                case "$PR_URL" in
+                  "$EXPECTED_PR_URL_PREFIX"*) ;;
+                  *) PR_URL="" ;;
+                esac
+                [ -n "$PR_URL" ] && break
+                if [ "$ATTEMPT" -lt 3 ]; then
+                  echo "No open pull request yet for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3); retrying in 10s"
+                  sleep 10s
+                else
+                  echo "No open pull request yet for $ORG_NAME/$REPO head $BRANCH_NAME (attempt $ATTEMPT of 3)"
+                fi
+              done
+            fi
+            if [ -n "$PR_URL" ]; then
+              echo "PR_URL: $PR_URL"
+              GH_TOKEN=$GH_BOT_TOKEN gh pr review --approve "$PR_URL" || echo "Warning: Failed to approve $PR_URL"
+            else
+              echo "Warning: No open pull request found to approve for $REPO head $BRANCH_NAME"
+            fi
             cd ..
             rm -rf $REPO
             sleep 10s
@@ -244,6 +272,81 @@ jobs:
               return 1
             done
           }
+          is_permanent_plan_gate_refusal() {
+            local request_exit_code="$1" is_private="$2" is_fork="$3"
+            [ "$request_exit_code" -eq "$GH_ADMIN_API_FORBIDDEN_EXIT_CODE" ] && [ "$is_private" = "true" ] && [ "$is_fork" = "true" ]
+          }
+          report_fleet_loop_outcome() {
+            local subject="$1" configured_count="$2" considered_count="$3" failed_repos="$4"
+            local outcome=0 failed_repo
+            echo "Configured $configured_count of $considered_count repositories for $subject"
+            if [ -n "$failed_repos" ]; then
+              echo "FATAL: failed to configure $subject for the following repositories:"
+              for failed_repo in $failed_repos; do
+                echo "  - $failed_repo"
+              done
+              outcome=1
+            fi
+            if [ "$considered_count" -eq 0 ]; then
+              echo "FATAL: the repository list for $subject resolved to zero repositories, so this run configured nothing"
+              outcome=1
+            elif [ "$configured_count" -eq 0 ]; then
+              echo "FATAL: configured zero of $considered_count repositories for $subject, so this run changed nothing"
+              outcome=1
+            fi
+            return "$outcome"
+          }
+          already_required_status_check_contexts() {
+            local repository_slug="$1" default_branch="$2" body
+            body="$(gh_admin_api GET "https://api.github.com/repos/$repository_slug/branches/$default_branch/protection" "" "200 404")" || return $?
+            printf '%s' "$body" | jq -r 'if type == "object" and (.required_status_checks | type) == "object" then ((.required_status_checks.contexts // [])[]) else empty end'
+          }
+          status_check_contexts_every_open_pull_request_reports() {
+            local repository_slug="$1"
+            local head_shas head_sha reported_contexts common_contexts="" is_first_pull_request="true"
+            head_shas="$(gh api "repos/$repository_slug/pulls?state=open&per_page=100" --jq '.[].head.sha')" || return 1
+            if [ -z "$head_shas" ]; then
+              return 0
+            fi
+            for head_sha in $head_shas; do
+              reported_contexts="$(gh api "repos/$repository_slug/commits/$head_sha/check-runs?per_page=100" --jq '.check_runs[].name')" || return 1
+              reported_contexts="$(printf '%s\n' "$reported_contexts" | LC_ALL=C sort -u)"
+              if [ "$is_first_pull_request" = "true" ]; then
+                common_contexts="$reported_contexts"
+                is_first_pull_request="false"
+              else
+                common_contexts="$(LC_ALL=C comm -12 <(printf '%s\n' "$common_contexts") <(printf '%s\n' "$reported_contexts"))"
+              fi
+            done
+            printf '%s\n' "$common_contexts"
+          }
+          unproven_required_status_check_contexts() {
+            local repository_slug="$1" already_required_contexts="$2" required_contexts="$3"
+            local missing_contexts="" reported_contexts="" unproven_contexts="" context
+            while IFS= read -r context; do
+              [ -z "$context" ] && continue
+              if printf '%s\n' "$already_required_contexts" | grep -Fxq "$context"; then
+                continue
+              fi
+              missing_contexts="${missing_contexts}${context}"$'\n'
+            done <<< "$required_contexts"
+            if [ -z "$missing_contexts" ]; then
+              return 0
+            fi
+            reported_contexts="$(status_check_contexts_every_open_pull_request_reports "$repository_slug")" || return 1
+            while IFS= read -r context; do
+              [ -z "$context" ] && continue
+              if printf '%s\n' "$reported_contexts" | grep -Fxq "$context"; then
+                continue
+              fi
+              if [ -z "$unproven_contexts" ]; then
+                unproven_contexts="$context"
+              else
+                unproven_contexts="$unproven_contexts, $context"
+              fi
+            done <<< "$missing_contexts"
+            printf '%s' "$unproven_contexts"
+          }
           HELPER
       - name: Update repository settings for all repositories
         run: |
@@ -251,31 +354,29 @@ jobs:
           ORG_NAME="${{ env.ORG_NAME }}"
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isPrivate,isFork | jq -r '.[] | select(.isArchived == false) | [.name, (.isPrivate | tostring), (.isFork | tostring)] | @tsv')
           FAILED_REPOS=""
+          CONSIDERED_COUNT=0
+          CONFIGURED_COUNT=0
           while IFS=$'\t' read -r REPO IS_PRIVATE IS_FORK; do
             [ -z "$REPO" ] && continue
+            CONSIDERED_COUNT=$((CONSIDERED_COUNT + 1))
             echo "Updating merge settings for $REPO"
             gh_admin_api PATCH "https://api.github.com/repos/$ORG_NAME/$REPO" '{ "delete_branch_on_merge": true, "allow_auto_merge": true, "allow_merge_commit": false, "allow_rebase_merge": false, "allow_squash_merge": true }' "200" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
-              if [ "$REQUEST_EXIT_CODE" -eq "$GH_ADMIN_API_FORBIDDEN_EXIT_CODE" ] && [ "$IS_PRIVATE" = "true" ] && [ "$IS_FORK" = "true" ]; then
+              if is_permanent_plan_gate_refusal "$REQUEST_EXIT_CODE" "$IS_PRIVATE" "$IS_FORK"; then
                 echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"
-                sleep 30s
+                sleep 5s
                 continue
               fi
               echo "WARNING: failed to update merge settings for $REPO; continuing with the remaining repositories"
               FAILED_REPOS="$FAILED_REPOS $REPO"
-              sleep 30s
+              sleep 5s
               continue
             fi
             echo "Squash-only merge settings updated for $REPO"
-            sleep 30s
+            CONFIGURED_COUNT=$((CONFIGURED_COUNT + 1))
+            sleep 5s
           done <<< "$REPO_LIST"
-          if [ -n "$FAILED_REPOS" ]; then
-            echo "FATAL: failed to update merge settings for the following repositories:"
-            for FAILED_REPO in $FAILED_REPOS; do
-              echo "  - $FAILED_REPO"
-            done
-            exit 1
-          fi
+          report_fleet_loop_outcome "merge settings" "$CONFIGURED_COUNT" "$CONSIDERED_COUNT" "$FAILED_REPOS" || exit 1
       - name: Update branch protection settings for all repositories
         if: ${{ !cancelled() }}
         run: |
@@ -284,13 +385,17 @@ jobs:
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isPrivate,isFork,defaultBranchRef | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | [.name, (.isPrivate | tostring), (.isFork | tostring), .defaultBranchRef.name] | @tsv')
           BRANCH_PROTECTION_PAYLOAD='{ "required_status_checks": { "strict": false, "contexts": ["test", "format", "commit-lint", "create_and_enable_automerge", "Check linked issues in pull requests", "umino-job"] }, "enforce_admins": false, "required_pull_request_reviews": { "required_approving_review_count": 1, "require_code_owner_reviews": true }, "restrictions": null, "required_linear_history": false, "allow_force_pushes": false, "allow_deletions": false, "required_conversation_resolution": true }'
           REQUIRED_CONTEXTS="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -r '.required_status_checks.contexts | join(", ")')"
+          REQUIRED_CONTEXT_LINES="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -r '.required_status_checks.contexts[]')"
           # termux-app has classic branch protection disabled repository-wide because its default branch is guarded by a repository ruleset instead of classic branch protection, so this request can never succeed there.
           RULESET_PROTECTED_REPOSITORIES="termux-app"
           # deepmerge-yaml is a public fork of an upstream project this account tracks rather than develops, so its continuous integration is the upstream project's and reports only Build and Lint; this request would succeed there and would permanently block its every pull request against six required contexts that will never report.
           UPSTREAM_TRACKING_FORK_REPOSITORIES="deepmerge-yaml"
           FAILED_REPOS=""
+          CONSIDERED_COUNT=0
+          CONFIGURED_COUNT=0
           while IFS=$'\t' read -r REPO IS_PRIVATE IS_FORK DEFAULT_BRANCH; do
             [ -z "$REPO" ] && continue
+            CONSIDERED_COUNT=$((CONSIDERED_COUNT + 1))
             case " $RULESET_PROTECTED_REPOSITORIES " in
               *" $REPO "*)
                 echo "EXPECTED SKIP: $REPO guards its default branch with a repository ruleset instead of classic branch protection, so classic branch protection is disabled repository-wide there"
@@ -308,30 +413,52 @@ jobs:
               FAILED_REPOS="$FAILED_REPOS $REPO"
               continue
             fi
+            ALREADY_REQUIRED_CONTEXTS="$(already_required_status_check_contexts "$ORG_NAME/$REPO" "$DEFAULT_BRANCH")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
+              if is_permanent_plan_gate_refusal "$REQUEST_EXIT_CODE" "$IS_PRIVATE" "$IS_FORK"; then
+                echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"
+                sleep 5s
+                continue
+              fi
+              echo "WARNING: failed to read the branch protection $REPO already has; continuing with the remaining repositories"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 5s
+              continue
+            fi
+            UNPROVEN_CONTEXTS="$(unproven_required_status_check_contexts "$ORG_NAME/$REPO" "$ALREADY_REQUIRED_CONTEXTS" "$REQUIRED_CONTEXT_LINES")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
+              echo "WARNING: failed to establish which status check contexts $REPO reports; continuing with the remaining repositories"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 5s
+              continue
+            fi
+            if [ -n "$UNPROVEN_CONTEXTS" ]; then
+              echo "WARNING: not protecting $REPO because requiring a status check context it cannot report would make its every pull request permanently unmergeable"
+              echo "WARNING: $REPO must report every required status check context: $REQUIRED_CONTEXTS"
+              echo "WARNING: $REPO neither already requires nor reports on every open pull request head: $UNPROVEN_CONTEXTS"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 5s
+              continue
+            fi
             echo "Updating branch protection for $REPO on default branch $DEFAULT_BRANCH"
             gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/branches/$DEFAULT_BRANCH/protection" "$BRANCH_PROTECTION_PAYLOAD" "200" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
-              if [ "$REQUEST_EXIT_CODE" -eq "$GH_ADMIN_API_FORBIDDEN_EXIT_CODE" ] && [ "$IS_PRIVATE" = "true" ] && [ "$IS_FORK" = "true" ]; then
+              if is_permanent_plan_gate_refusal "$REQUEST_EXIT_CODE" "$IS_PRIVATE" "$IS_FORK"; then
                 echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"
-                sleep 30s
+                sleep 5s
                 continue
               fi
               echo "WARNING: failed to update branch protection for $REPO; continuing with the remaining repositories"
               echo "WARNING: $REPO must report every required status check context: $REQUIRED_CONTEXTS"
               FAILED_REPOS="$FAILED_REPOS $REPO"
-              sleep 30s
+              sleep 5s
               continue
             fi
             echo "Branch protection settings updated for $REPO"
-            sleep 30s
+            CONFIGURED_COUNT=$((CONFIGURED_COUNT + 1))
+            sleep 5s
           done <<< "$REPO_LIST"
-          if [ -n "$FAILED_REPOS" ]; then
-            echo "FATAL: failed to update branch protection for the following repositories:"
-            for FAILED_REPO in $FAILED_REPOS; do
-              echo "  - $FAILED_REPO"
-            done
-            exit 1
-          fi
+          report_fleet_loop_outcome "branch protection" "$CONFIGURED_COUNT" "$CONSIDERED_COUNT" "$FAILED_REPOS" || exit 1
       - name: Create or update Copilot code review ruleset for all repositories
         if: ${{ !cancelled() }}
         run: |
@@ -347,19 +474,22 @@ jobs:
             "rules": [ { "type": "copilot_code_review", "parameters": { "review_draft_pull_requests": false, "review_on_push": true } } ]
           }'
           FAILED_REPOS=""
+          CONSIDERED_COUNT=0
+          CONFIGURED_COUNT=0
           while IFS=$'\t' read -r REPO IS_PRIVATE IS_FORK; do
             [ -z "$REPO" ] && continue
+            CONSIDERED_COUNT=$((CONSIDERED_COUNT + 1))
             echo "Processing Copilot code review ruleset for $REPO"
             EXISTING_RULESETS="$(gh_admin_api GET "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "" "200")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
-              if [ "$REQUEST_EXIT_CODE" -eq "$GH_ADMIN_API_FORBIDDEN_EXIT_CODE" ] && [ "$IS_PRIVATE" = "true" ] && [ "$IS_FORK" = "true" ]; then
+              if is_permanent_plan_gate_refusal "$REQUEST_EXIT_CODE" "$IS_PRIVATE" "$IS_FORK"; then
                 echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"
-                sleep 30s
+                sleep 5s
                 continue
               fi
               echo "WARNING: failed to list rulesets for $REPO; continuing with the remaining repositories"
               FAILED_REPOS="$FAILED_REPOS $REPO"
-              sleep 30s
+              sleep 5s
               continue
             fi
             RULESET_ID="$(printf '%s' "$EXISTING_RULESETS" | jq -r --arg name "$RULESET_NAME" 'if type == "array" then (.[] | select(.name == $name) | .id) else empty end' | head -n1)"
@@ -371,23 +501,18 @@ jobs:
               gh_admin_api POST "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "$RULESET_PAYLOAD" "200 201" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             fi
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
-              if [ "$REQUEST_EXIT_CODE" -eq "$GH_ADMIN_API_FORBIDDEN_EXIT_CODE" ] && [ "$IS_PRIVATE" = "true" ] && [ "$IS_FORK" = "true" ]; then
+              if is_permanent_plan_gate_refusal "$REQUEST_EXIT_CODE" "$IS_PRIVATE" "$IS_FORK"; then
                 echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"
-                sleep 30s
+                sleep 5s
                 continue
               fi
               echo "WARNING: failed to write the Copilot code review ruleset for $REPO; continuing with the remaining repositories"
               FAILED_REPOS="$FAILED_REPOS $REPO"
-              sleep 30s
+              sleep 5s
               continue
             fi
             echo "Copilot code review ruleset configured for $REPO"
-            sleep 30s
+            CONFIGURED_COUNT=$((CONFIGURED_COUNT + 1))
+            sleep 5s
           done <<< "$REPO_LIST"
-          if [ -n "$FAILED_REPOS" ]; then
-            echo "FATAL: failed to configure the Copilot code review ruleset for the following repositories:"
-            for FAILED_REPO in $FAILED_REPOS; do
-              echo "  - $FAILED_REPO"
-            done
-            exit 1
-          fi
+          report_fleet_loop_outcome "the Copilot code review ruleset" "$CONFIGURED_COUNT" "$CONSIDERED_COUNT" "$FAILED_REPOS" || exit 1
