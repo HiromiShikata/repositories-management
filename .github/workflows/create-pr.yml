@@ -35,7 +35,7 @@ jobs:
       - name: Check if PR already exists
         id: check_pr
         run: |
-          EXISTING_PR=$(gh pr list --head "${{ steps.branch_name.outputs.branch }}" --base main --json number --jq '.[0].number // empty')
+          EXISTING_PR=$(gh pr list --head "${{ steps.branch_name.outputs.branch }}" --base main --json number,isCrossRepository --jq 'map(select(.isCrossRepository == false)) | .[0].number // empty')
           echo "existing_pr=$EXISTING_PR" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
