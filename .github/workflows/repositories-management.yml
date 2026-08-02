@@ -1,8 +1,8 @@
 name: Repositories Management
 
 concurrency:
-  group: repositories-management-${{ github.ref }}
-  cancel-in-progress: true
+  group: repositories-management-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
 
 on:
   schedule:

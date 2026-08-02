@@ -590,6 +590,15 @@ const requiredStatusCheckContexts =
   expectedBranchProtectionPayload.required_status_checks.contexts;
 
 describe('repositories-management.yml workflow', () => {
+  test('fleet sync concurrency does not cancel in-progress runs', () => {
+    expect(workflowContent).not.toContain('cancel-in-progress: true');
+    expect(workflowContent).toContain('cancel-in-progress: false');
+  });
+
+  test('fleet sync concurrency group discriminates by event name to allow schedule and dispatch to run independently', () => {
+    expect(workflowContent).toContain('github.event_name');
+  });
+
   test('merge settings enforcement targets test-* repositories', () => {
     const stepBlock = extractStepBlock(mergeSettingsStepName);
     expect(stepBlock).not.toContain('startswith("test-")');
