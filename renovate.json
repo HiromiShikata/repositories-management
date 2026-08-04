@@ -18,23 +18,39 @@
   "osvVulnerabilityAlerts": true,
   "packageRules": [
     {
+      "description": "Repositories still using the legacy eslintrc configuration format, which eslint 9 deprecated and eslint 10 removed.",
       "matchPackageNames": ["eslint"],
+      "matchRepositories": [
+        "HiromiShikata/deepmerge-yaml",
+        "HiromiShikata/npm-cli-gh-issue-preparator",
+        "HiromiShikata/repositories-management"
+      ],
       "allowedVersions": "<9.0.0"
     },
     {
+      "description": "Package file of a further location still using the legacy eslintrc configuration format.",
+      "matchPackageNames": ["eslint"],
+      "matchFileNames": ["bastion-app/package.json"],
+      "allowedVersions": "<9.0.0"
+    },
+    {
+      "description": "The only location whose typescript-eslint pair is still on the 4.x line.",
       "matchPackageNames": ["@typescript-eslint/eslint-plugin"],
+      "matchRepositories": ["HiromiShikata/deepmerge-yaml"],
       "allowedVersions": "<6.0.0"
     },
     {
+      "description": "The only location whose typescript-eslint pair is still on the 4.x line.",
       "matchPackageNames": ["@typescript-eslint/parser"],
+      "matchRepositories": ["HiromiShikata/deepmerge-yaml"],
       "allowedVersions": "<6.0.0"
     },
     {
-      "matchPackageNames": ["eslint-plugin-unused-imports"],
-      "allowedVersions": "<4.0.0"
-    },
-    {
+      "description": "The only location still below the pinned clasp version.",
       "matchPackageNames": ["@google/clasp"],
+      "matchRepositories": [
+        "HiromiShikata/gaccount-control-gas-client-project"
+      ],
       "allowedVersions": "3.1.0"
     }
   ]
