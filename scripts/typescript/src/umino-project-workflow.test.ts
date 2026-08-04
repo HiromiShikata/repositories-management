@@ -18,6 +18,15 @@ describe('umino-project.yml workflow', () => {
       const uminoJobBlock = workflowContent.slice(uminoJobStart, nextJob);
       expect(uminoJobBlock).toContain("github.actor != 'app/dependabot'");
     });
+
+    test('is skipped inside HiromiShikata/test-repository', () => {
+      const uminoJobStart = workflowContent.indexOf('umino-job:');
+      const nextJob = workflowContent.indexOf('\n  check_', uminoJobStart);
+      const uminoJobBlock = workflowContent.slice(uminoJobStart, nextJob);
+      expect(uminoJobBlock).toContain(
+        "github.repository != 'HiromiShikata/test-repository'",
+      );
+    });
   });
 
   describe('check_pull_requests_to_link_issues job condition', () => {
@@ -41,6 +50,16 @@ describe('umino-project.yml workflow', () => {
       );
       const checkJobBlock = workflowContent.slice(checkJobStart);
       expect(checkJobBlock).toContain("github.actor != 'app/dependabot'");
+    });
+
+    test('is skipped inside HiromiShikata/test-repository', () => {
+      const checkJobStart = workflowContent.indexOf(
+        'check_pull_requests_to_link_issues:',
+      );
+      const checkJobBlock = workflowContent.slice(checkJobStart);
+      expect(checkJobBlock).toContain(
+        "github.repository != 'HiromiShikata/test-repository'",
+      );
     });
 
     test('job-level condition excludes dependabot[bot] PR author by user.login', () => {
