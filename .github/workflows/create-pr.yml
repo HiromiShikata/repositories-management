@@ -82,9 +82,15 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}")
           ALLOW_AUTO_MERGE=$(echo "$REPO_DATA" | jq -r '.allow_auto_merge')
-          echo "allowed=$ALLOW_AUTO_MERGE" >> "$GITHUB_OUTPUT"
+          ALLOW_REBASE_MERGE=$(echo "$REPO_DATA" | jq -r '.allow_rebase_merge')
           if [ "$ALLOW_AUTO_MERGE" != "true" ]; then
             echo "Repository has allow_auto_merge disabled. Skipping auto-merge enablement."
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+          elif [ "$ALLOW_REBASE_MERGE" != "true" ]; then
+            echo "Repository has allow_rebase_merge disabled. Skipping auto-merge enablement."
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
           fi
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
