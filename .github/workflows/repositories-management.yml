@@ -105,7 +105,7 @@ jobs:
             git push origin $BRANCH_NAME
             EXPECTED_PR_URL_PREFIX="https://github.com/$ORG_NAME/$REPO/pull/"
             PR_URL=""
-            if PR_CREATE_OUTPUT=$(GH_TOKEN=$APP_TOKEN gh pr create --repo "$ORG_NAME/$REPO" --base "$DEFAULT_BRANCH" --head "$BRANCH_NAME" --title "Updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK" 2>&1); then
+            if PR_CREATE_OUTPUT=$(GH_TOKEN=$APP_TOKEN gh pr create --repo "$ORG_NAME/$REPO" --base "$DEFAULT_BRANCH" --head "$BRANCH_NAME" --title "autogen: updated common files in $ORG_NAME" --body "This PR has been created automatically. \nLog: $ACTION_LINK" 2>&1); then
               PR_URL=$(printf '%s\n' "$PR_CREATE_OUTPUT" | grep -E '^https://github\.com/[^/]+/[^/]+/pull/[0-9]+$' | tail -n 1)
               case "$PR_URL" in
                 "$EXPECTED_PR_URL_PREFIX"*) ;;
