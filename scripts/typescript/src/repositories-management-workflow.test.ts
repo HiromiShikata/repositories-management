@@ -1473,6 +1473,19 @@ describe('update-repos sync pull request creation and approval', () => {
     );
   });
 
+  test('titles the sync pull request with the same conventional commit type the generated commit uses', () => {
+    const stepBlock = extractStepBlock(syncStepName);
+    const titleMatch = stepBlock.match(/--title "([^"]+)"/);
+    expect(titleMatch).not.toBeNull();
+    const title = titleMatch === null ? '' : titleMatch[1];
+    expect(title).toMatch(
+      /^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test|autogen|prep|adapt)(\([^)]+\))?: /,
+    );
+    expect(stepBlock).toContain(
+      '--title "autogen: updated common files in $ORG_NAME"',
+    );
+  });
+
   test('approves the pull request URL the creation returned without any head-branch lookup', () => {
     const { status, output } = runPullRequestResolution(
       ghStubCreating(createdPullRequestUrl),
