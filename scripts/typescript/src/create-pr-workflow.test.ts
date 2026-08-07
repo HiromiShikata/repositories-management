@@ -18,4 +18,20 @@ describe('create-pr.yml workflow', () => {
     expect(stepBlock).toContain("steps.check_auto_merge.outputs.allowed == 'true'");
     expect(stepBlock).not.toContain('continue-on-error: true');
   });
+
+  test('auto-merge capability check also gates on allow_rebase_merge to prevent REBASE method failure', () => {
+    const checkStepStart = workflowContent.indexOf('- name: Check auto-merge capability');
+    const nextStep = workflowContent.indexOf('- name:', checkStepStart + 1);
+    const checkStepBlock =
+      nextStep === -1
+        ? workflowContent.slice(checkStepStart)
+        : workflowContent.slice(checkStepStart, nextStep);
+    expect(checkStepBlock).toContain('allow_rebase_merge');
+    expect(checkStepBlock).toContain('ALLOW_REBASE_MERGE');
+  });
+
+  test('auto-merge mutation uses REBASE merge method to preserve original commit authorship', () => {
+    expect(workflowContent).toContain('mergeMethod: REBASE');
+    expect(workflowContent).not.toContain('mergeMethod: SQUASH');
+  });
 });
