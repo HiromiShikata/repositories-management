@@ -1463,6 +1463,12 @@ const ghStubFailingToCreateAndListing = (fixture: string): string =>
   ].join('\n');
 
 describe('update-repos sync pull request creation and approval', () => {
+  test('requests copilot-pull-request-reviewer[bot] as reviewer after creating each project-common PR', () => {
+    const stepBlock = extractStepBlock(syncStepName);
+    expect(stepBlock).toContain('copilot-pull-request-reviewer[bot]');
+    expect(stepBlock).toContain('requested_reviewers');
+  });
+
   test('creates the sync pull request against this account repository and its own default branch', () => {
     const stepBlock = extractStepBlock(syncStepName);
     expect(stepBlock).toContain(

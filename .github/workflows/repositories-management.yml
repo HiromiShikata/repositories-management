@@ -130,6 +130,8 @@ jobs:
             fi
             if [ -n "$PR_URL" ]; then
               echo "PR_URL: $PR_URL"
+              PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+              GH_TOKEN=$APP_TOKEN gh api --method POST repos/$ORG_NAME/$REPO/pulls/$PR_NUMBER/requested_reviewers --field 'reviewers[]=copilot-pull-request-reviewer[bot]' || echo "Warning: Failed to request Copilot review for $REPO/$PR_NUMBER (non-fatal)"
               GH_TOKEN=$GH_BOT_TOKEN gh pr review --approve "$PR_URL" || echo "Warning: Failed to approve $PR_URL"
             else
               echo "Warning: No open pull request found to approve for $REPO head $BRANCH_NAME"
