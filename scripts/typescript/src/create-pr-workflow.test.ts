@@ -38,12 +38,17 @@ describe('create-pr.yml workflow', () => {
     expect(workflowContent).not.toContain('branches-ignore:');
   });
 
-  test('Enable Auto Merge step treats unstable and already-enabled errors as non-fatal warnings', () => {
+  test('Enable Auto Merge step retries on UNPROCESSABLE error before giving up non-fatally', () => {
     const stepStart = workflowContent.indexOf('- name: Enable Auto Merge for PR');
     const stepBlock = workflowContent.slice(stepStart);
-    expect(stepBlock).toContain('unstable');
-    expect(stepBlock).toContain('exit 0');
-    expect(stepBlock).not.toContain('continue-on-error: true');
+    expect(stepBlock).toContain('UNPROCESSABLE');
+    expect(stepBlock).toContain('MAX_RETRIES');
+    expect(stepBlock).toContain('sleep');
+    const unprocessableIndex = stepBlock.indexOf('UNPROCESSABLE');
+    const exitOneIndex = stepBlock.indexOf('exit 1');
+    expect(unprocessableIndex).toBeGreaterThan(-1);
+    expect(exitOneIndex).toBeGreaterThan(-1);
+    expect(unprocessableIndex).toBeLessThan(exitOneIndex);
   });
 
   test('Enable Auto Merge step uses owner PAT so squash commits are attributed to the owner not the bot', () => {
