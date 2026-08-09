@@ -1,5 +1,130 @@
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+
+const workflowExpressionValues = (
+  action: string,
+): Record<string, string> => ({
+  'github.event.pull_request.node_id || github.event.issue.node_id':
+    'I_stubResourceNodeId',
+  'env.project_v2_id': 'PVT_stubProjectId',
+  'env.unread': 'Unread',
+  'github.event.action': action,
+});
+
+const moveToUnreadRunScript = (
+  workflowContent: string,
+  action: string,
+): string => {
+  const lines = workflowContent.split('\n');
+  const stepLineIndex = lines.findIndex((line) =>
+    line.includes('- name: Move issue to'),
+  );
+  const runLineIndex = lines.findIndex(
+    (line, index) => index > stepLineIndex && line.trim() === 'run: |',
+  );
+  const bodyIndent = lines[runLineIndex].indexOf('run:') + 2;
+  const bodyLines: string[] = [];
+  for (let index = runLineIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() !== '' && !line.startsWith(' '.repeat(bodyIndent))) {
+      break;
+    }
+    bodyLines.push(line.slice(bodyIndent));
+  }
+  const values = workflowExpressionValues(action);
+  return bodyLines.join('\n').replace(/\$\{\{([^}]*)\}\}/g, (_match, inner) => {
+    const expression = inner.trim();
+    const value = values[expression];
+    if (value === undefined) {
+      throw new Error(`Unhandled workflow expression: ${expression}`);
+    }
+    return value;
+  });
+};
+
+const githubCliStub = `#!/bin/bash
+INVOCATION="$*"
+JQ_FILTER=""
+PREVIOUS_ARGUMENT=""
+for ARGUMENT in "$@"; do
+  if [ "$PREVIOUS_ARGUMENT" = "--jq" ]; then
+    JQ_FILTER="$ARGUMENT"
+  fi
+  PREVIOUS_ARGUMENT="$ARGUMENT"
+done
+
+emit() {
+  if [ -n "$JQ_FILTER" ]; then
+    printf '%s' "$1" | jq -r "$JQ_FILTER"
+  else
+    printf '%s\\n' "$1"
+  fi
+}
+
+case "$INVOCATION" in
+  *addProjectV2ItemById*)
+    emit "{\\"data\\":{\\"addProjectV2ItemById\\":{\\"item\\":{\\"id\\":\\"$STUB_ITEM_ID\\"}}}}"
+    ;;
+  *fieldValueByName*)
+    if [ -n "$STUB_EXISTING_STATUS" ]; then
+      emit "{\\"data\\":{\\"node\\":{\\"fieldValueByName\\":{\\"name\\":\\"$STUB_EXISTING_STATUS\\"}}}}"
+    else
+      emit '{"data":{"node":{"fieldValueByName":null}}}'
+    fi
+    ;;
+  *updateProjectV2ItemFieldValue*)
+    printf '%s\\n' "$INVOCATION" >> "$STUB_STATUS_WRITE_LOG"
+    emit "{\\"data\\":{\\"updateProjectV2ItemFieldValue\\":{\\"projectV2Item\\":{\\"id\\":\\"$STUB_ITEM_ID\\"}}}}"
+    ;;
+  *)
+    printf 'unexpected gh invocation: %s\\n' "$INVOCATION" >&2
+    exit 1
+    ;;
+esac
+`;
+
+const runMoveToUnreadStep = (
+  workflowContent: string,
+  action: string,
+  existingStatus: string,
+): { exitCode: number | null; stderr: string; statusWrites: string[] } => {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'umino-project-'));
+  try {
+    const stubDirectory = path.join(sandbox, 'bin');
+    fs.mkdirSync(stubDirectory);
+    const stubPath = path.join(stubDirectory, 'gh');
+    fs.writeFileSync(stubPath, githubCliStub, { mode: 0o755 });
+    const scriptPath = path.join(sandbox, 'step.sh');
+    fs.writeFileSync(
+      scriptPath,
+      moveToUnreadRunScript(workflowContent, action),
+    );
+    const statusWriteLog = path.join(sandbox, 'status-writes.log');
+    fs.writeFileSync(statusWriteLog, '');
+    const result = spawnSync('bash', ['-e', scriptPath], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${stubDirectory}:${process.env.PATH ?? ''}`,
+        STUB_ITEM_ID: 'PVTI_stubItemId',
+        STUB_EXISTING_STATUS: existingStatus,
+        STUB_STATUS_WRITE_LOG: statusWriteLog,
+      },
+    });
+    return {
+      exitCode: result.status,
+      stderr: result.stderr,
+      statusWrites: fs
+        .readFileSync(statusWriteLog, 'utf8')
+        .split('\n')
+        .filter((line) => line !== ''),
+    };
+  } finally {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  }
+};
 
 describe('umino-project.yml workflow', () => {
   const workflowContent = fs.readFileSync(
@@ -296,6 +421,38 @@ describe('umino-project.yml workflow', () => {
       expect(checkStepBlock).toContain(
         'github-token: ${{ steps.app-token.outputs.token }}',
       );
+    });
+  });
+
+  describe('move-to-unread step behaviour', () => {
+    test('keeps a Status that was already set on a newly opened item', () => {
+      const result = runMoveToUnreadStep(
+        workflowContent,
+        'opened',
+        'In Tmux by agent',
+      );
+
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.statusWrites).toEqual([]);
+    });
+
+    test('writes Unread on a newly opened item that has no Status yet', () => {
+      const result = runMoveToUnreadStep(workflowContent, 'opened', '');
+
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.statusWrites).toHaveLength(1);
+      expect(result.statusWrites[0]).toContain('optionId=f75ad846');
+    });
+
+    test('writes Unread on a reopened item even when it already has a Status', () => {
+      const result = runMoveToUnreadStep(workflowContent, 'reopened', 'Done');
+
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.statusWrites).toHaveLength(1);
+      expect(result.statusWrites[0]).toContain('optionId=f75ad846');
     });
   });
 });
