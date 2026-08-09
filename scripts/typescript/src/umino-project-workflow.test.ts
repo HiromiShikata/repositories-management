@@ -3,9 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const workflowExpressionValues = (
-  action: string,
-): Record<string, string> => ({
+const workflowExpressionValues = (action: string): Record<string, string> => ({
   'github.event.pull_request.node_id || github.event.issue.node_id':
     'I_stubResourceNodeId',
   'env.project_v2_id': 'PVT_stubProjectId',
@@ -34,14 +32,16 @@ const moveToUnreadRunScript = (
     bodyLines.push(line.slice(bodyIndent));
   }
   const values = workflowExpressionValues(action);
-  return bodyLines.join('\n').replace(/\$\{\{([^}]*)\}\}/g, (_match, inner) => {
-    const expression = inner.trim();
-    const value = values[expression];
-    if (value === undefined) {
-      throw new Error(`Unhandled workflow expression: ${expression}`);
-    }
-    return value;
-  });
+  return bodyLines
+    .join('\n')
+    .replace(/\$\{\{([^}]*)\}\}/g, (_match: string, inner: string): string => {
+      const expression = inner.trim();
+      const value = values[expression];
+      if (value === undefined) {
+        throw new Error(`Unhandled workflow expression: ${expression}`);
+      }
+      return value;
+    });
 };
 
 const githubCliStub = `#!/bin/bash
