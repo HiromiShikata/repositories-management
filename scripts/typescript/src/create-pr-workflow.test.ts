@@ -45,4 +45,15 @@ describe('create-pr.yml workflow', () => {
     expect(stepBlock).toContain('exit 0');
     expect(stepBlock).not.toContain('continue-on-error: true');
   });
+
+  test('Enable Auto Merge step uses owner PAT so squash commits are attributed to the owner not the bot', () => {
+    const stepStart = workflowContent.indexOf('- name: Enable Auto Merge for PR');
+    const nextStep = workflowContent.indexOf('- name:', stepStart + 1);
+    const stepBlock =
+      nextStep === -1
+        ? workflowContent.slice(stepStart)
+        : workflowContent.slice(stepStart, nextStep);
+    expect(stepBlock).toContain('secrets.GH_TOKEN');
+    expect(stepBlock).not.toContain('steps.app-token.outputs.token');
+  });
 });
