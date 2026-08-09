@@ -30,6 +30,20 @@ jobs:
         id: branch_name
         run: echo "branch=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
 
+      - name: Set head commit subject as output
+        id: commit_subject
+        run: |
+          SUBJECT=$(git log -1 --pretty=%s)
+          if [ -z "$SUBJECT" ]; then
+            echo "The head commit subject is empty, so the pull request title cannot be derived from it" >&2
+            exit 1
+          fi
+          {
+            echo 'subject<<COMMIT_SUBJECT_EOF'
+            echo "$SUBJECT"
+            echo 'COMMIT_SUBJECT_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Check if PR already exists
         id: check_pr
         run: |
@@ -46,7 +60,7 @@ jobs:
           github_token: ${{ steps.app-token.outputs.token }}
           destination_branch: '${{ github.event.repository.default_branch }}'
           source_branch: ''
-          pr_title: '${{ steps.branch_name.outputs.branch }}'
+          pr_title: '${{ steps.commit_subject.outputs.subject }}'
           pr_body: |
             :magic_wand: :sparkles:
 
