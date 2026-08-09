@@ -348,7 +348,7 @@ jobs:
             [ -z "$REPO" ] && continue
             CONSIDERED_COUNT=$((CONSIDERED_COUNT + 1))
             echo "Updating merge settings for $REPO"
-            gh_admin_api PATCH "https://api.github.com/repos/$ORG_NAME/$REPO" '{ "delete_branch_on_merge": true, "allow_auto_merge": true, "allow_merge_commit": false, "allow_rebase_merge": true, "allow_squash_merge": true }' "200" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            gh_admin_api PATCH "https://api.github.com/repos/$ORG_NAME/$REPO" '{ "delete_branch_on_merge": true, "allow_auto_merge": true, "allow_merge_commit": true, "allow_rebase_merge": false, "allow_squash_merge": true }' "200" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
               if is_permanent_plan_gate_refusal "$REQUEST_EXIT_CODE" "$IS_PRIVATE" "$IS_FORK"; then
                 echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"

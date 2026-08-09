@@ -479,8 +479,8 @@ const rulesetsUrl = (repositoryName: string): string =>
 const expectedMergeSettingsPayload = {
   delete_branch_on_merge: true,
   allow_auto_merge: true,
-  allow_merge_commit: false,
-  allow_rebase_merge: true,
+  allow_merge_commit: true,
+  allow_rebase_merge: false,
   allow_squash_merge: true,
 };
 
@@ -596,11 +596,11 @@ describe('repositories-management.yml workflow', () => {
     expect(stepBlock).toContain('select(.isArchived == false)');
   });
 
-  test('merge settings enforcement enables rebase and squash merge while disabling merge commits', () => {
+  test('merge settings enforcement enables merge commit and squash merge while disabling rebase merge', () => {
     const stepBlock = extractStepBlock(mergeSettingsStepName);
     expect(stepBlock).toContain('"allow_squash_merge": true');
-    expect(stepBlock).toContain('"allow_merge_commit": false');
-    expect(stepBlock).toContain('"allow_rebase_merge": true');
+    expect(stepBlock).toContain('"allow_merge_commit": true');
+    expect(stepBlock).toContain('"allow_rebase_merge": false');
     expect(stepBlock).toContain('"allow_auto_merge": true');
   });
 });
@@ -654,7 +654,7 @@ describe('repository-config admin API credential', () => {
 });
 
 describe('repository-config admin API request payloads', () => {
-  test('merge settings requests write rebase and squash merge settings', () => {
+  test('merge settings requests write merge commit and squash merge settings', () => {
     const result = runStepScriptsExpectingSuccess({
       stepNames: [helperStepName, mergeSettingsStepName],
       repositories: twoRepositories,
