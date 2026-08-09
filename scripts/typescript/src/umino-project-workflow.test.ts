@@ -425,6 +425,14 @@ describe('umino-project.yml workflow', () => {
   });
 
   describe('move-to-unread step behaviour', () => {
+    const unreadOptionIdMatch = workflowContent.match(/-f optionId="([^"]+)"/);
+    const unreadOptionId =
+      unreadOptionIdMatch === null ? '' : unreadOptionIdMatch[1];
+
+    test('the workflow declares the Unread option id the step writes', () => {
+      expect(unreadOptionId).not.toBe('');
+    });
+
     test('keeps a Status that was already set on a newly opened item', () => {
       const result = runMoveToUnreadStep(
         workflowContent,
@@ -443,7 +451,7 @@ describe('umino-project.yml workflow', () => {
       expect(result.stderr).toBe('');
       expect(result.exitCode).toBe(0);
       expect(result.statusWrites).toHaveLength(1);
-      expect(result.statusWrites[0]).toContain('optionId=f75ad846');
+      expect(result.statusWrites[0]).toContain(`optionId=${unreadOptionId}`);
     });
 
     test('writes Unread on a reopened item even when it already has a Status', () => {
@@ -452,7 +460,7 @@ describe('umino-project.yml workflow', () => {
       expect(result.stderr).toBe('');
       expect(result.exitCode).toBe(0);
       expect(result.statusWrites).toHaveLength(1);
-      expect(result.statusWrites[0]).toContain('optionId=f75ad846');
+      expect(result.statusWrites[0]).toContain(`optionId=${unreadOptionId}`);
     });
   });
 });
