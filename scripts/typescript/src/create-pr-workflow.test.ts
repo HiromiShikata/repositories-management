@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+const BLACKSMITH_RUNNER_EXPRESSION =
+  "github.event.repository.private && 'blacksmith-2vcpu-ubuntu-2204' || 'ubuntu-latest'";
+
 describe('create-pr.yml workflow', () => {
   const workflowContent = fs.readFileSync(
     path.join(__dirname, '../../../.github/workflows/create-pr.yml'),
@@ -55,5 +58,10 @@ describe('create-pr.yml workflow', () => {
         : workflowContent.slice(stepStart, nextStep);
     expect(stepBlock).toContain('secrets.GH_TOKEN');
     expect(stepBlock).not.toContain('steps.app-token.outputs.token');
+  });
+
+  test('uses Blacksmith runner for private repos and ubuntu-latest for public repos', () => {
+    expect(workflowContent).toContain(BLACKSMITH_RUNNER_EXPRESSION);
+    expect(workflowContent).not.toContain('runs-on: ubuntu-latest');
   });
 });
