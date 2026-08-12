@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+const BLACKSMITH_RUNNER_EXPRESSION =
+  "github.event.repository.private && 'blacksmith-2vcpu-ubuntu-2204' || 'ubuntu-latest'";
+
 describe('close-manual-prs.yml workflow', () => {
   const workflowContent = fs.readFileSync(
     path.join(__dirname, '../../../.github/workflows/close-manual-prs.yml'),
@@ -47,5 +50,10 @@ describe('close-manual-prs.yml workflow', () => {
   test('uses App token for write operations', () => {
     expect(workflowContent).toContain('HS_BOT_GH_AP_CLIENT_ID');
     expect(workflowContent).toContain('HS_BOT_GH_AP_PRIVATE_KEY');
+  });
+
+  test('uses Blacksmith runner for private repos and ubuntu-latest for public repos', () => {
+    expect(workflowContent).toContain(BLACKSMITH_RUNNER_EXPRESSION);
+    expect(workflowContent).not.toContain('runs-on: ubuntu-latest');
   });
 });

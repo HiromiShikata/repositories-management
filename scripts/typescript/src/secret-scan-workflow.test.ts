@@ -4,18 +4,11 @@ import * as path from 'path';
 const BLACKSMITH_RUNNER_EXPRESSION =
   "github.event.repository.private && 'blacksmith-2vcpu-ubuntu-2204' || 'ubuntu-latest'";
 
-describe('commit-lint.yml workflow', () => {
+describe('secret-scan.yml workflow', () => {
   const workflowContent = fs.readFileSync(
-    path.join(__dirname, '../../../.github/workflows/commit-lint.yml'),
+    path.join(__dirname, '../../../.github/workflows/secret-scan.yml'),
     'utf8',
   );
-
-  test('uses repository default_branch instead of hardcoded main for commitlint from-ref', () => {
-    expect(workflowContent).toContain(
-      '--from=origin/${{ github.event.repository.default_branch }}',
-    );
-    expect(workflowContent).not.toContain('--from=origin/main');
-  });
 
   test('uses Blacksmith runner for private repos and ubuntu-latest for public repos', () => {
     expect(workflowContent).toContain(BLACKSMITH_RUNNER_EXPRESSION);
