@@ -56,6 +56,7 @@ jobs:
             ".github/workflows/create-pr.yml"
             ".github/workflows/api-created_issue_pr.yml"
             ".github/workflows/close-manual-prs.yml"
+            ".github/workflows/ci-failure-issue-creator.yml"
             ".github/workflows/secret-scan.yml"
             ".github/CODEOWNERS"
             ".github/copilot-instructions.md"
