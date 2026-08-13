@@ -20,3 +20,15 @@ description = "Allow intentional credentials in login-accounts credential-vault 
 paths = [
   '''(^|/)\.claude/skills/[^/]*login-accounts/SKILL\.md$''',
 ]
+
+# Intentional project credential store.
+# Private documentation repositories intentionally store project login
+# credentials as plaintext files under sk/config/, one file per field. That
+# directory is an intentional secret store, so credentials committed there are
+# expected and must not fail the scan. Secret scanning stays active for every
+# other path so accidental secret commits elsewhere are still caught.
+[[allowlists]]
+description = "Allow intentional credentials in the sk/config project credential store"
+paths = [
+  '''(^|/)sk/config/''',
+]
