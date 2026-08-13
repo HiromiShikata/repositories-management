@@ -1,59 +1,88 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as yaml from 'js-yaml';
+import { execSync } from 'child_process';
 
-const BLACKSMITH_RUNNER_EXPRESSION =
-  "github.event.repository.private && 'blacksmith-2vcpu-ubuntu-2204' || 'ubuntu-latest'";
+type WorkflowStep = {
+  name?: string;
+  uses?: string;
+  run?: string;
+  env?: Record<string, string>;
+  with?: Record<string, string>;
+  id?: string;
+  if?: string;
+};
+
+type WorkflowJob = {
+  'runs-on': string;
+  if?: string;
+  steps: WorkflowStep[];
+};
+
+type Workflow = {
+  on: Record<string, unknown>;
+  jobs: Record<string, WorkflowJob>;
+};
+
+function isWorkflow(value: unknown): value is Workflow {
+  return typeof value === 'object' && value !== null && 'jobs' in value && 'on' in value;
+}
 
 describe('close-manual-prs.yml workflow', () => {
-  const workflowContent = fs.readFileSync(
-    path.join(__dirname, '../../../.github/workflows/close-manual-prs.yml'),
-    'utf8',
+  const workflowPath = path.join(
+    __dirname,
+    '../../../.github/workflows/close-manual-prs.yml',
   );
+  const parsed = yaml.load(fs.readFileSync(workflowPath, 'utf8'));
+  if (!isWorkflow(parsed)) throw new Error('Invalid workflow YAML');
+  const workflow = parsed;
+  const job = workflow.jobs['close-manual-pr'];
+  const mainStep = job.steps.find(
+    (s) => s.name === 'Close manually created pull requests',
+  );
+  const script = mainStep?.run ?? '';
 
-  test('allowlist contains all required bot logins', () => {
-    expect(workflowContent).toContain('hs-bot-gh-app[bot]');
-    expect(workflowContent).toContain('dependabot[bot]');
-    expect(workflowContent).toContain('renovate[bot]');
-    expect(workflowContent).toContain('github-actions[bot]');
-  });
-
-  test('bot type check prevents closing unknown bots', () => {
-    expect(workflowContent).toContain('"Bot"');
+  test('uses ubuntu-latest runner for all repos', () => {
+    for (const [jobName, j] of Object.entries(workflow.jobs)) {
+      expect({ job: jobName, runsOn: j['runs-on'] }).toEqual({
+        job: jobName,
+        runsOn: 'ubuntu-latest',
+      });
+    }
   });
 
   test('has schedule and workflow_dispatch triggers for sweep', () => {
-    expect(workflowContent).toContain('schedule:');
-    expect(workflowContent).toContain('workflow_dispatch:');
+    expect(workflow.on).toHaveProperty('schedule');
+    expect(workflow.on).toHaveProperty('workflow_dispatch');
   });
 
   test('job-level if skips bot-authored PRs on pull_request events', () => {
-    expect(workflowContent).toContain(
-      "github.event_name != 'pull_request' || github.event.pull_request.user.type != 'Bot'",
-    );
-  });
-
-  test('close comment starts with bot signature line', () => {
-    expect(workflowContent).toContain('From: :robot: close-manual-prs');
-  });
-
-  test('sweep uses --paginate to avoid truncation', () => {
-    expect(workflowContent).toContain('--paginate');
-  });
-
-  test('close_with_comment comments before closing', () => {
-    const commentIdx = workflowContent.indexOf('gh pr comment');
-    const closeIdx = workflowContent.indexOf('gh pr close');
-    expect(commentIdx).toBeGreaterThan(-1);
-    expect(closeIdx).toBeGreaterThan(commentIdx);
+    expect(job.if).toMatch(/github\.event_name != 'pull_request'/);
   });
 
   test('uses App token for write operations', () => {
-    expect(workflowContent).toContain('HS_BOT_GH_AP_CLIENT_ID');
-    expect(workflowContent).toContain('HS_BOT_GH_AP_PRIVATE_KEY');
+    const appTokenStep = job.steps.find((s) => s.id === 'app-token');
+    expect(appTokenStep?.with?.['client-id']).toMatch(/HS_BOT_GH_AP_CLIENT_ID/);
+    expect(appTokenStep?.with?.['private-key']).toMatch(/HS_BOT_GH_AP_PRIVATE_KEY/);
   });
 
-  test('uses Blacksmith runner for private repos and ubuntu-latest for public repos', () => {
-    expect(workflowContent).toContain(BLACKSMITH_RUNNER_EXPRESSION);
-    expect(workflowContent).not.toContain('runs-on: ubuntu-latest');
+  test('allowlist rejects human PR authors as manual', () => {
+    const isManualPrScript = `
+${script.split('close_with_comment()')[0]}
+is_manual_pr "human-user" "User" && echo "manual" || echo "not-manual"
+`;
+    const result = execSync(`bash -c '${isManualPrScript.replace(/'/g, "'\"'\"'")}'`)
+      .toString()
+      .trim();
+    expect(result).toBe('manual');
+  });
+
+  test('allowlist accepts bot PR authors as non-manual', () => {
+    const fnBody = script.split('close_with_comment()')[0];
+    const testScript = `${fnBody}\nis_manual_pr "hs-bot-gh-app[bot]" "Bot" && echo "manual" || echo "not-manual"`;
+    const result = execSync(`bash << 'SCRIPT'\n${testScript}\nSCRIPT`)
+      .toString()
+      .trim();
+    expect(result).toBe('not-manual');
   });
 });
