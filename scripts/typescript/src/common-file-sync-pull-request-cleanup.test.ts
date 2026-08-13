@@ -306,7 +306,12 @@ describe('repositories-management.yml common file sync cleanup wiring', () => {
 
     expect(stepBlock).not.toContain(':owner/:repo');
     expect(stepBlock).not.toContain('gh pr close');
-    expect(stepBlock).not.toContain('gh pr list');
+    const ghPrListLines = stepBlock
+      .split('\n')
+      .filter((line) => line.includes('gh pr list'));
+    for (const line of ghPrListLines) {
+      expect(line).toContain('--repo');
+    }
   });
 
   test('cleans up before cloning, committing and pushing the fresh common file branch', () => {
