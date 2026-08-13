@@ -12,6 +12,7 @@ const GITLEAKS_DOWNLOAD_URL = `https://github.com/gitleaks/gitleaks/releases/dow
 const CONFIG_PATH = path.join(__dirname, '../../../.gitleaks.toml');
 
 const CREDENTIAL_STORE_FILE = 'sk/config/github/manager_token';
+const NESTED_CREDENTIAL_STORE_FILE = 'sk/config/aws/prod/manager_token';
 const ORDINARY_FILE = 'src/handler/token.txt';
 const SYNTHETIC_TOKEN = ['ghp', 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'].join(
   '_',
@@ -62,6 +63,7 @@ const scannedFilesReportedAsLeaks = (
   git(root, ['commit', '-qm', 'base']);
   const base = git(root, ['rev-parse', 'HEAD']).trim();
   writeFile(root, CREDENTIAL_STORE_FILE, `${SYNTHETIC_TOKEN}\n`);
+  writeFile(root, NESTED_CREDENTIAL_STORE_FILE, `${SYNTHETIC_TOKEN}\n`);
   writeFile(root, ORDINARY_FILE, `${SYNTHETIC_TOKEN}\n`);
   git(root, ['add', '-A']);
   git(root, ['commit', '-qm', 'add credentials']);
@@ -99,6 +101,12 @@ describe('.gitleaks.toml', () => {
   test('does not report a credential committed to the sk/config credential store', () => {
     expect(scannedFilesReportedAsLeaks(binary, configBody)).not.toContain(
       CREDENTIAL_STORE_FILE,
+    );
+  });
+
+  test('does not report a credential committed to a nested directory of the credential store', () => {
+    expect(scannedFilesReportedAsLeaks(binary, configBody)).not.toContain(
+      NESTED_CREDENTIAL_STORE_FILE,
     );
   });
 
