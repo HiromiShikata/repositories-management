@@ -3,8 +3,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const BLACKSMITH_RUNNER_EXPRESSION =
-  "github.event.repository.private && 'blacksmith-2vcpu-ubuntu-2204' || 'ubuntu-latest'";
 
 const workflowExpressionValues = (action: string): Record<string, string> => ({
   'github.event.pull_request.node_id || github.event.issue.node_id':
@@ -392,9 +390,9 @@ describe('umino-project.yml workflow', () => {
   });
 
   describe('runner configuration', () => {
-    test('all jobs use Blacksmith runner for private repos and ubuntu-latest for public repos', () => {
-      expect(workflowContent).toContain(BLACKSMITH_RUNNER_EXPRESSION);
-      expect(workflowContent).not.toContain('runs-on: ubuntu-latest');
+    test('all jobs use ubuntu-latest runner', () => {
+      expect(workflowContent).toContain('runs-on: ubuntu-latest');
+      expect(workflowContent).not.toContain('blacksmith-2vcpu-ubuntu-2204');
     });
   });
 
