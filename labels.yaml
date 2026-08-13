@@ -1,146 +1,146 @@
 - name: ASAP
-  color: "#B60205"
+  color: '#B60205'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: only share
-  color: "#B60205"
+  color: '#B60205'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: Low priority
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: new-story
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: story
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: interacting-with-outside
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: hiromishikata:task:pc
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: hiromishikata:task:mobile
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: hiromishikata:task:home
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: hiromishikata:task:silent
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: hiromishikata:task:monitoring
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: hiromishikata:task:photo
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: hiromishikata:task:researching
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: hiromishikata:task:development
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: hiromishikata:task:offline
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: hiromishikata:task:online
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: chore
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: llm-model:claude-opus-5
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases:
     - llm-model:claude-opus-4-7
     - llm-model:claude-opus-4.7
-  description: ""
+  description: ''
   delete: false
 - name: llm-model:claude-opus-4-6
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases:
     - llm-model:claude-opus-4.6
-  description: ""
+  description: ''
   delete: true
 - name: llm-model:claude-sonnet-5
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases:
     - llm-model:claude-sonnet-4-6
     - llm-model:claude-sonnet-4.6
-  description: ""
+  description: ''
   delete: false
 - name: llm-model:claude-haiku-4-5
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases:
     - llm-model:claude-haiku
-  description: ""
+  description: ''
   delete: true
 - name: llm-model:gpt-5.5
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: category:impl-plan
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: true
 - name: category:review
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: true
 - name: accounting
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: false
 - name: category:deep-research
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: true
 - name: category:chore
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: true
 - name: category:browser
-  color: "#0E8A16"
+  color: '#0E8A16'
   aliases: []
-  description: ""
+  description: ''
   delete: true
