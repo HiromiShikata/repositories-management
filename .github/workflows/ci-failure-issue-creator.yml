@@ -30,57 +30,6 @@ jobs:
           client-id: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
           private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
           owner: HiromiShikata
-      - name: Create or comment on CI failure issue
-        uses: actions/github-script@v9
+      - uses: HiromiShikata/github-action-create-ci-failure-issue@v1
         with:
           github-token: ${{ steps.app-token.outputs.token }}
-          script: |
-            try {
-              const { owner, repo } = context.repo;
-              const sha = context.payload.check_suite.head_sha;
-              const headCommit = context.payload.check_suite.head_commit;
-              const commitMessage =
-                headCommit?.message?.split('\n')[0] ?? sha.slice(0, 7);
-              const commitUrl = `https://github.com/${owner}/${repo}/commit/${sha}`;
-              const checksUrl = `https://github.com/${owner}/${repo}/commit/${sha}/checks`;
-
-              const issueTitle = '[CI] Default branch CI failure';
-
-              const { data: issues } = await github.rest.issues.listForRepo({
-                owner,
-                repo,
-                state: 'open',
-                per_page: 100,
-              });
-
-              const existingIssue = issues.find(
-                (issue) =>
-                  issue.title === issueTitle && issue.pull_request == null,
-              );
-
-              const failureBody = `CI check suite failed on the default branch.\n\n- Commit: [${sha.slice(0, 7)}](${commitUrl})\n- Message: ${commitMessage}\n- Checks: ${checksUrl}`;
-
-              if (existingIssue) {
-                core.info(
-                  `Found existing issue #${existingIssue.number}, adding comment`,
-                );
-                await github.rest.issues.createComment({
-                  owner,
-                  repo,
-                  issue_number: existingIssue.number,
-                  body: failureBody,
-                });
-              } else {
-                core.info('No existing issue found, creating new issue');
-                await github.rest.issues.create({
-                  owner,
-                  repo,
-                  title: issueTitle,
-                  body: failureBody,
-                });
-              }
-            } catch (error) {
-              core.error(
-                `Failed to create or update CI failure issue: ${error.message}`,
-              );
-            }

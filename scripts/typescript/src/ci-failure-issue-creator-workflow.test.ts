@@ -35,22 +35,14 @@ describe('ci-failure-issue-creator.yml workflow', () => {
     );
   });
 
-  test('creates issue with correct title for new failures', () => {
-    expect(workflowContent).toContain('[CI] Default branch CI failure');
+  test('uses the reusable create-ci-failure-issue action', () => {
+    expect(workflowContent).toContain(
+      'HiromiShikata/github-action-create-ci-failure-issue@v1',
+    );
   });
 
   test('uses App token for write operations', () => {
     expect(workflowContent).toContain('HS_BOT_GH_AP_CLIENT_ID');
     expect(workflowContent).toContain('HS_BOT_GH_AP_PRIVATE_KEY');
-  });
-
-  test('comments on existing open issue instead of creating duplicate', () => {
-    expect(workflowContent).toContain('listForRepo');
-    expect(workflowContent).toContain('existingIssue');
-    expect(workflowContent).toContain('createComment');
-  });
-
-  test('filters existing issues by pull_request null to exclude PRs', () => {
-    expect(workflowContent).toContain('pull_request == null');
   });
 });
