@@ -142,6 +142,26 @@ jobs:
             sleep 10s
           done
 
+  dependency-pull-request-approval:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+      - name: Approve dependency update pull requests
+        run: |
+          ORG_NAME="${{ env.ORG_NAME }}"
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
+          for REPO in $REPO_LIST; do
+            PR_URLS=$(gh api "repos/$ORG_NAME/$REPO/pulls?state=open&per_page=100" --jq '.[] | select(.user.login == "dependabot[bot]" or .user.login == "renovate[bot]") | .html_url') || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO"; continue; }
+            for PR_URL in $PR_URLS; do
+              gh pr review --approve "$PR_URL" || echo "Warning: Failed to approve $PR_URL"
+              gh pr merge --auto --squash "$PR_URL" || echo "Warning: Failed to enable auto merge for $PR_URL"
+            done
+          done
+
   label-sync:
     runs-on: ubuntu-latest
     env:
