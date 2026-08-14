@@ -155,7 +155,7 @@ jobs:
           ORG_NAME="${{ env.ORG_NAME }}"
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
           for REPO in $REPO_LIST; do
-            PR_URLS=$(gh api "repos/$ORG_NAME/$REPO/pulls?state=open&per_page=100" --jq '.[] | select(.user.login == "dependabot[bot]" or .user.login == "renovate[bot]") | .html_url') || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO"; continue; }
+            PR_URLS=$(gh api "repos/$ORG_NAME/$REPO/pulls?state=open&per_page=100" --jq '.[] | select(.user.login == "dependabot[bot]" or .user.login == "renovate[bot]" or (.head.ref | startswith("project-common/update-common-files-"))) | .html_url') || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO"; continue; }
             for PR_URL in $PR_URLS; do
               PR_NUMBER="${PR_URL##*/}"
               HEAD_SHA=$(gh api "repos/$ORG_NAME/$REPO/pulls/$PR_NUMBER" --jq '.head.sha') || { echo "Warning: Failed to read $PR_URL"; continue; }
