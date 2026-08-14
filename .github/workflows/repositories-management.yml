@@ -157,8 +157,15 @@ jobs:
           for REPO in $REPO_LIST; do
             PR_URLS=$(gh api "repos/$ORG_NAME/$REPO/pulls?state=open&per_page=100" --jq '.[] | select(.user.login == "dependabot[bot]" or .user.login == "renovate[bot]") | .html_url') || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO"; continue; }
             for PR_URL in $PR_URLS; do
+              PR_NUMBER="${PR_URL##*/}"
+              HEAD_SHA=$(gh api "repos/$ORG_NAME/$REPO/pulls/$PR_NUMBER" --jq '.head.sha') || { echo "Warning: Failed to read $PR_URL"; continue; }
+              CHECK_STATE=$(gh api "repos/$ORG_NAME/$REPO/commits/$HEAD_SHA/check-runs" --jq '[.check_runs[] | {name: .name, status: .status, conclusion: .conclusion, at: (.completed_at // .started_at)}] | group_by(.name) | map(sort_by(.at) | last) | if length == 0 then "nochecks" elif any(.status != "completed") then "pending" elif any(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral") then "failing" else "passing" end') || { echo "Warning: Failed to read check runs for $PR_URL"; continue; }
+              if [ "$CHECK_STATE" = "nochecks" ] || [ "$CHECK_STATE" = "failing" ]; then
+                echo "Skipping $PR_URL because its check state is $CHECK_STATE"
+                continue
+              fi
               gh pr review --approve "$PR_URL" || echo "Warning: Failed to approve $PR_URL"
-              gh pr merge --auto --squash "$PR_URL" || echo "Warning: Failed to enable auto merge for $PR_URL"
+              gh pr merge --auto --squash "$PR_URL" || gh pr merge --squash "$PR_URL" || echo "Warning: Failed to merge $PR_URL"
             done
           done
 
