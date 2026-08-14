@@ -1,10 +1,8 @@
-import { spawnSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const BLACKSMITH_RUNNER_EXPRESSION =
-  "github.event.repository.private && 'blacksmith-2vcpu-ubuntu-2204' || 'ubuntu-latest'";
 const CI_FAILURE_ISSUE_TITLE = '[CI] Default branch CI failure';
 
 const workflowContent = fs.readFileSync(
@@ -153,9 +151,18 @@ const runCreateOrCommentStep = (
 
 describe('ci-failure-issue-creator.yml workflow', () => {
   describe('workflow structure', () => {
-    test('uses Blacksmith runner for private repos and ubuntu-latest for public repos', () => {
-      expect(workflowContent).toContain(BLACKSMITH_RUNNER_EXPRESSION);
-      expect(workflowContent).not.toContain('runs-on: ubuntu-latest');
+    test('uses ubuntu-latest runner for all repos', () => {
+      const output = execSync(
+        `python3 -c "import yaml, sys, json; d=yaml.safe_load(sys.stdin); print(json.dumps([j['runs-on'] for j in d['jobs'].values()]))"`,
+        { input: workflowContent },
+      ).toString().trim();
+      const runsOnValues: unknown = JSON.parse(output);
+      if (!Array.isArray(runsOnValues)) {
+        throw new Error(`unexpected output: ${output}`);
+      }
+      for (const runsOn of runsOnValues) {
+        expect(runsOn).toBe('ubuntu-latest');
+      }
     });
 
     test('job condition filters to failure conclusion on default branch only', () => {
