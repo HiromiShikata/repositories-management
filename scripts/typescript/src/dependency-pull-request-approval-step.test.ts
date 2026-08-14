@@ -45,6 +45,7 @@ type CheckRunEntry = { name: string; status: string; conclusion: string | null }
 type PullRequestEntry = {
   number: number;
   login: string;
+  headRef: string;
   checkRuns: CheckRunEntry[];
 };
 
@@ -83,7 +84,7 @@ if [ "\${1:-}" = "api" ]; then
       ;;
     */pulls*)
       jq -c --arg repository "$repository" --arg organization "$STUB_ORGANIZATION_NAME" \\
-        '(.[$repository] // []) | map({user: {login: .login}, html_url: ("https://github.com/" + $organization + "/" + $repository + "/pull/" + (.number | tostring))})' \\
+        '(.[$repository] // []) | map({user: {login: .login}, head: {ref: .headRef}, html_url: ("https://github.com/" + $organization + "/" + $repository + "/pull/" + (.number | tostring))})' \\
         "$STUB_OPEN_PULL_REQUESTS_JSON" | jq -r "$jq_expression"
       exit 0
       ;;
@@ -172,21 +173,59 @@ describe('repositories-management dependency pull request approval step', () => 
   ];
   const openPullRequests: Record<string, PullRequestEntry[]> = {
     'active-repository': [
-      { number: 11, login: 'dependabot[bot]', checkRuns: successfulCheckRuns },
-      { number: 12, login: 'renovate[bot]', checkRuns: successfulCheckRuns },
-      { number: 13, login: 'HiromiShikata', checkRuns: successfulCheckRuns },
+      {
+        number: 11,
+        login: 'dependabot[bot]',
+        headRef: 'dependabot/npm_and_yarn/undici-7.29.0',
+        checkRuns: successfulCheckRuns,
+      },
+      {
+        number: 12,
+        login: 'renovate[bot]',
+        headRef: 'renovate/eslint',
+        checkRuns: successfulCheckRuns,
+      },
+      {
+        number: 13,
+        login: 'HiromiShikata',
+        headRef: 'feature-branch',
+        checkRuns: successfulCheckRuns,
+      },
       {
         number: 14,
         login: 'dependabot[bot]',
+        headRef: 'dependabot/npm_and_yarn/jest-30.0.0',
         checkRuns: [
           { name: 'test', status: 'completed', conclusion: 'failure' },
           { name: 'format', status: 'completed', conclusion: 'success' },
         ],
       },
-      { number: 15, login: 'dependabot[bot]', checkRuns: [] },
+      {
+        number: 15,
+        login: 'dependabot[bot]',
+        headRef: 'dependabot/npm_and_yarn/lodash-4.17.21',
+        checkRuns: [],
+      },
+      {
+        number: 16,
+        login: 'hs-bot-gh-app[bot]',
+        headRef: 'project-common/update-common-files-20260814042431',
+        checkRuns: successfulCheckRuns,
+      },
+      {
+        number: 17,
+        login: 'hs-bot-gh-app[bot]',
+        headRef: 'i123',
+        checkRuns: successfulCheckRuns,
+      },
     ],
     'archived-repository': [
-      { number: 21, login: 'dependabot[bot]', checkRuns: successfulCheckRuns },
+      {
+        number: 21,
+        login: 'dependabot[bot]',
+        headRef: 'dependabot/npm_and_yarn/undici-7.29.0',
+        checkRuns: successfulCheckRuns,
+      },
     ],
   };
 
@@ -233,6 +272,27 @@ describe('repositories-management dependency pull request approval step', () => 
         (line) =>
           line.startsWith('pr ') &&
           line.includes(pullRequestUrl('active-repository', 15)),
+      ).length,
+    ).toBe(0);
+  });
+
+  test('approves and merges the common file sync pull request', () => {
+    const result = runStep(repositories, openPullRequests);
+    expect(result.log).toContain(
+      `pr review --approve ${pullRequestUrl('active-repository', 16)}`,
+    );
+    expect(result.log).toContain(
+      `pr merge --auto --squash ${pullRequestUrl('active-repository', 16)}`,
+    );
+  });
+
+  test('leaves another bot branch that is not a common file sync untouched', () => {
+    const result = runStep(repositories, openPullRequests);
+    expect(
+      result.log.filter(
+        (line) =>
+          line.startsWith('pr ') &&
+          line.includes(pullRequestUrl('active-repository', 17)),
       ).length,
     ).toBe(0);
   });
