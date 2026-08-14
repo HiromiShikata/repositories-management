@@ -363,11 +363,35 @@ jobs:
             done <<< "$missing_contexts"
             printf '%s' "$unproven_contexts"
           }
+          wait_for_graphql_rate_limit() {
+            local min_remaining="${1:-50}" rate_info remaining reset now wait_seconds
+            while true; do
+              rate_info="$(curl -sS \
+                -H "Authorization: token $GH_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/rate_limit")"
+              remaining="$(printf '%s' "$rate_info" | jq -r '.resources.graphql.remaining')"
+              if [ -n "$remaining" ] && [ "$remaining" != "null" ] && [ "$remaining" -gt "$min_remaining" ] 2>/dev/null; then
+                return 0
+              fi
+              reset="$(printf '%s' "$rate_info" | jq -r '.resources.graphql.reset')"
+              now="$(date +%s)"
+              if [ -n "$reset" ] && [ "$reset" != "null" ] && wait_seconds="$(( reset - now + 5 ))" 2>/dev/null; then
+                :
+              else
+                wait_seconds=60
+              fi
+              [ "$wait_seconds" -lt 1 ] && wait_seconds=1
+              echo "GraphQL rate limit remaining: ${remaining:-unknown}; waiting ${wait_seconds}s until reset" >&2
+              sleep "${wait_seconds}s"
+            done
+          }
           HELPER
       - name: Update repository settings for all repositories
         run: |
           source /tmp/gh_admin_api.sh
           ORG_NAME="${{ env.ORG_NAME }}"
+          wait_for_graphql_rate_limit
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isPrivate,isFork | jq -r '.[] | select(.isArchived == false) | [.name, (.isPrivate | tostring), (.isFork | tostring)] | @tsv')
           FAILED_REPOS=""
           CONSIDERED_COUNT=0
@@ -398,6 +422,7 @@ jobs:
         run: |
           source /tmp/gh_admin_api.sh
           ORG_NAME="${{ env.ORG_NAME }}"
+          wait_for_graphql_rate_limit
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isPrivate,isFork,defaultBranchRef | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | [.name, (.isPrivate | tostring), (.isFork | tostring), .defaultBranchRef.name] | @tsv')
           BRANCH_PROTECTION_PAYLOAD='{ "required_status_checks": { "strict": false, "contexts": ["test", "format", "commit-lint", "create_and_enable_automerge", "Check linked issues in pull requests", "umino-job"] }, "enforce_admins": false, "required_pull_request_reviews": { "required_approving_review_count": 1, "require_code_owner_reviews": true }, "restrictions": null, "required_linear_history": false, "allow_force_pushes": false, "allow_deletions": false, "required_conversation_resolution": true }'
           REQUIRED_CONTEXTS="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -r '.required_status_checks.contexts | join(", ")')"
@@ -480,6 +505,7 @@ jobs:
         run: |
           source /tmp/gh_admin_api.sh
           ORG_NAME="${{ env.ORG_NAME }}"
+          wait_for_graphql_rate_limit
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isPrivate,isFork | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | [.name, (.isPrivate | tostring), (.isFork | tostring)] | @tsv')
           RULESET_NAME="copilot-code-review"
           RULESET_PAYLOAD='{

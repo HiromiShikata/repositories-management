@@ -192,6 +192,20 @@ while [ "$index" -lt "\${#arguments[@]}" ]; do
   esac
   index=$((index + 1))
 done
+if echo "\${request_url}" | grep -q '/rate_limit'; then
+  count_file="\${HOME}/.rate-limit-call-count"
+  count="\$(cat "\${count_file}" 2>/dev/null || echo 0)"
+  count=\$((count + 1))
+  printf '%d' "\${count}" > "\${count_file}"
+  low_calls="\${STUB_GRAPHQL_RATE_LIMIT_LOW_CALLS:-0}"
+  if [ "\${count}" -le "\${low_calls}" ]; then
+    printf '%s' '{"resources":{"graphql":{"remaining":0,"reset":1234567890}}}'
+  else
+    remaining="\${STUB_GRAPHQL_RATE_LIMIT_REMAINING:-4999}"
+    printf '{"resources":{"graphql":{"remaining":%s,"reset":9999999999}}}' "\${remaining}"
+  fi
+  exit 0
+fi
 jq -cn \\
   --arg method "$method" \\
   --arg url "$request_url" \\
@@ -316,6 +330,7 @@ type StepRunRequest = {
   alreadyRequiredContexts?: string[];
   unprotectedRepositories?: string[];
   openPullRequestCheckRuns?: Record<string, string[][]>;
+  graphqlRateLimitLowCalls?: number;
 };
 
 const runStepScripts = ({
@@ -328,6 +343,7 @@ const runStepScripts = ({
   alreadyRequiredContexts,
   unprotectedRepositories = [],
   openPullRequestCheckRuns = {},
+  graphqlRateLimitLowCalls = 0,
 }: StepRunRequest): StepRunResult => {
   const sandbox = fs.mkdtempSync(
     path.join(os.tmpdir(), 'repositories-management-workflow-'),
@@ -396,6 +412,7 @@ const runStepScripts = ({
       STUB_UNPROTECTED_REPOSITORIES: unprotectedRepositories.join(' '),
       STUB_SERVER_ERROR_REPOSITORIES: serverErrorRepositories.join(' '),
       STUB_SERVER_ERROR_METHODS: serverErrorMethods.join(' '),
+      STUB_GRAPHQL_RATE_LIMIT_LOW_CALLS: String(graphqlRateLimitLowCalls),
     },
   });
 
@@ -602,6 +619,35 @@ describe('repositories-management.yml workflow', () => {
     expect(stepBlock).toContain('"allow_merge_commit": false');
     expect(stepBlock).toContain('"allow_rebase_merge": false');
     expect(stepBlock).toContain('"allow_auto_merge": true');
+  });
+});
+
+describe('repository-config GraphQL rate limit handling', () => {
+  test('the merge settings step succeeds and logs a wait when the GraphQL rate limit is initially exhausted', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, mergeSettingsStepName],
+      repositories: [mainDefaultBranchRepository],
+      graphqlRateLimitLowCalls: 1,
+    });
+    expect(result.output).toContain('GraphQL rate limit remaining: 0');
+  });
+
+  test('the branch protection step succeeds and logs a wait when the GraphQL rate limit is initially exhausted', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [mainDefaultBranchRepository],
+      graphqlRateLimitLowCalls: 1,
+    });
+    expect(result.output).toContain('GraphQL rate limit remaining: 0');
+  });
+
+  test('the ruleset step succeeds and logs a wait when the GraphQL rate limit is initially exhausted', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, rulesetStepName],
+      repositories: [mainDefaultBranchRepository],
+      graphqlRateLimitLowCalls: 1,
+    });
+    expect(result.output).toContain('GraphQL rate limit remaining: 0');
   });
 });
 
