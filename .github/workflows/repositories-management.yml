@@ -452,7 +452,6 @@ jobs:
               echo "WARNING: not protecting $REPO because requiring a status check context it cannot report would make its every pull request permanently unmergeable"
               echo "WARNING: $REPO must report every required status check context: $REQUIRED_CONTEXTS"
               echo "WARNING: $REPO neither already requires nor reports on every open pull request head: $UNPROVEN_CONTEXTS"
-              FAILED_REPOS="$FAILED_REPOS $REPO"
               sleep 5s
               continue
             fi
