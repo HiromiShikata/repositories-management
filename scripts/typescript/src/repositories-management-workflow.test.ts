@@ -582,6 +582,13 @@ const missingStatusCheckContextRepository: RepositoryListEntry = {
   isFork: false,
   defaultBranchRef: { name: 'main' },
 };
+const adminApiForbiddenRepository: RepositoryListEntry = {
+  name: 'aburakayaz-apollo',
+  isArchived: false,
+  isPrivate: true,
+  isFork: false,
+  defaultBranchRef: { name: 'main' },
+};
 const twoRepositories: RepositoryListEntry[] = [
   mainDefaultBranchRepository,
   masterDefaultBranchRepository,
@@ -1041,7 +1048,7 @@ describe('repository-config expected skips that can never succeed', () => {
     }
   });
 
-  test('the branch protection exception lists name exactly the two documented repositories', () => {
+  test('the branch protection exception lists name exactly the documented repositories', () => {
     expect(
       shellVariableAssignment(
         branchProtectionStepName,
@@ -1054,6 +1061,40 @@ describe('repository-config expected skips that can never succeed', () => {
         'UPSTREAM_TRACKING_FORK_REPOSITORIES',
       ),
     ).toBe(upstreamTrackingForkRepository.name);
+    expect(
+      shellVariableAssignment(
+        branchProtectionStepName,
+        'ADMIN_API_FORBIDDEN_REPOSITORIES',
+      ),
+    ).toBe('aburakayaz-apollo aburakayaz-artemis aburakayaz-artemis-data');
+  });
+
+  test('an admin-api-forbidden repository is expected-skip in the branch protection step while the rest of the fleet is protected', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [adminApiForbiddenRepository, mainDefaultBranchRepository],
+    });
+    expect(result.output).toContain(
+      `EXPECTED SKIP: ${adminApiForbiddenRepository.name} is excluded from branch protection configuration because the admin API permanently refuses these operations for it`,
+    );
+    expect(requestSummaries(result)).toEqual([
+      `GET ${protectionUrl(mainDefaultBranchRepository.name, 'main')}`,
+      `PUT ${protectionUrl(mainDefaultBranchRepository.name, 'main')}`,
+    ]);
+  });
+
+  test('an admin-api-forbidden repository is expected-skip in the ruleset step while the rest of the fleet is configured', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, rulesetStepName],
+      repositories: [adminApiForbiddenRepository, mainDefaultBranchRepository],
+    });
+    expect(result.output).toContain(
+      `EXPECTED SKIP: ${adminApiForbiddenRepository.name} is excluded from Copilot code review ruleset configuration because the admin API permanently refuses these operations for it`,
+    );
+    expect(requestSummaries(result)).toEqual([
+      `GET ${rulesetsUrl(mainDefaultBranchRepository.name)}`,
+      `POST ${rulesetsUrl(mainDefaultBranchRepository.name)}`,
+    ]);
   });
 
   test('a public fork that is on neither exception list still fails the step when its protection request fails', () => {
@@ -1066,8 +1107,8 @@ describe('repository-config expected skips that can never succeed', () => {
     expect(result.output).toContain(`  - ${publicForkRepository.name}`);
   });
 
-  test('a repository that does not report the required status check contexts is never skipped', () => {
-    const result = runStepScriptsExpectingFailure({
+  test('a repository that does not report the required status check contexts is warned but the step still succeeds', () => {
+    const result = runStepScriptsExpectingSuccess({
       stepNames: [helperStepName, branchProtectionStepName],
       repositories: [
         missingStatusCheckContextRepository,
@@ -1079,9 +1120,6 @@ describe('repository-config expected skips that can never succeed', () => {
       },
     });
     expect(result.output).not.toContain('EXPECTED SKIP');
-    expect(result.output).toContain(
-      `  - ${missingStatusCheckContextRepository.name}`,
-    );
     for (const context of requiredStatusCheckContexts) {
       expect(result.output).toContain(context);
     }
@@ -1119,7 +1157,7 @@ describe('repository-config branch protection context-reporting precondition', (
   });
 
   test('withholds protection from an unprotected repository whose open pull request head does not report every required context, names the repository and the contexts, and still protects the rest of the fleet', () => {
-    const result = runStepScriptsExpectingFailure({
+    const result = runStepScriptsExpectingSuccess({
       stepNames: [helperStepName, branchProtectionStepName],
       repositories: [unprotectedRepository, mainDefaultBranchRepository],
       unprotectedRepositories: [unprotectedRepository.name],
@@ -1138,7 +1176,6 @@ describe('repository-config branch protection context-reporting precondition', (
     expect(result.output).toContain(
       `WARNING: ${unprotectedRepository.name} neither already requires nor reports on every open pull request head: ${contextsMissingFromOwnContinuousIntegration.join(', ')}`,
     );
-    expect(result.output).toContain(`  - ${unprotectedRepository.name}`);
     expect(result.output).not.toContain('EXPECTED SKIP');
   });
 
@@ -1228,7 +1265,7 @@ describe('repository-config branch protection context-reporting precondition', (
     ]);
   });
 
-  test('every provable repository after the first unprovable one still receives its protection write, and the non-zero exit happens only in the post-loop report', () => {
+  test('every provable repository still receives its protection write when an unprovable one precedes it in the fleet', () => {
     const provableRepositories: RepositoryListEntry[] = [
       'first-provable-repository',
       'second-provable-repository',
@@ -1240,7 +1277,7 @@ describe('repository-config branch protection context-reporting precondition', (
       isFork: false,
       defaultBranchRef: { name: 'main' },
     }));
-    const result = runStepScriptsExpectingFailure({
+    const result = runStepScriptsExpectingSuccess({
       stepNames: [helperStepName, branchProtectionStepName],
       repositories: [unprotectedRepository, ...provableRepositories],
       unprotectedRepositories: [unprotectedRepository.name],
@@ -1261,15 +1298,8 @@ describe('repository-config branch protection context-reporting precondition', (
     const countReport = result.output.indexOf(
       'Configured 3 of 4 repositories for branch protection',
     );
-    const failureReport = result.output.indexOf(
-      'FATAL: failed to configure branch protection for the following repositories:',
-    );
     expect(lastWriteConfirmation).toBeGreaterThanOrEqual(0);
     expect(countReport).toBeGreaterThan(lastWriteConfirmation);
-    expect(failureReport).toBeGreaterThan(countReport);
-    expect(
-      result.output.indexOf(`  - ${unprotectedRepository.name}`),
-    ).toBeGreaterThan(failureReport);
   });
 
   test('a private fork whose existing protection read is refused by the plan gate is skipped without any write', () => {

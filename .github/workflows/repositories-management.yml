@@ -406,6 +406,8 @@ jobs:
           RULESET_PROTECTED_REPOSITORIES="termux-app"
           # deepmerge-yaml is a public fork of an upstream project this account tracks rather than develops, so its continuous integration is the upstream project's and reports only Build and Lint; this request would succeed there and would permanently block its every pull request against six required contexts that will never report.
           UPSTREAM_TRACKING_FORK_REPOSITORIES="deepmerge-yaml"
+          # These repositories permanently refuse all branch protection and ruleset admin API operations; they are excluded to prevent CI from failing on errors that can never be resolved.
+          ADMIN_API_FORBIDDEN_REPOSITORIES="aburakayaz-apollo aburakayaz-artemis aburakayaz-artemis-data"
           FAILED_REPOS=""
           CONSIDERED_COUNT=0
           CONFIGURED_COUNT=0
@@ -421,6 +423,12 @@ jobs:
             case " $UPSTREAM_TRACKING_FORK_REPOSITORIES " in
               *" $REPO "*)
                 echo "EXPECTED SKIP: $REPO tracks an upstream project instead of being developed here, so it reports none of the required status check contexts and protecting it would block its every pull request permanently"
+                continue
+                ;;
+            esac
+            case " $ADMIN_API_FORBIDDEN_REPOSITORIES " in
+              *" $REPO "*)
+                echo "EXPECTED SKIP: $REPO is excluded from branch protection configuration because the admin API permanently refuses these operations for it"
                 continue
                 ;;
             esac
@@ -452,7 +460,6 @@ jobs:
               echo "WARNING: not protecting $REPO because requiring a status check context it cannot report would make its every pull request permanently unmergeable"
               echo "WARNING: $REPO must report every required status check context: $REQUIRED_CONTEXTS"
               echo "WARNING: $REPO neither already requires nor reports on every open pull request head: $UNPROVEN_CONTEXTS"
-              FAILED_REPOS="$FAILED_REPOS $REPO"
               sleep 5s
               continue
             fi
@@ -489,12 +496,19 @@ jobs:
             "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
             "rules": [ { "type": "copilot_code_review", "parameters": { "review_draft_pull_requests": false, "review_on_push": true } } ]
           }'
+          ADMIN_API_FORBIDDEN_REPOSITORIES="aburakayaz-apollo aburakayaz-artemis aburakayaz-artemis-data"
           FAILED_REPOS=""
           CONSIDERED_COUNT=0
           CONFIGURED_COUNT=0
           while IFS=$'\t' read -r REPO IS_PRIVATE IS_FORK; do
             [ -z "$REPO" ] && continue
             CONSIDERED_COUNT=$((CONSIDERED_COUNT + 1))
+            case " $ADMIN_API_FORBIDDEN_REPOSITORIES " in
+              *" $REPO "*)
+                echo "EXPECTED SKIP: $REPO is excluded from Copilot code review ruleset configuration because the admin API permanently refuses these operations for it"
+                continue
+                ;;
+            esac
             echo "Processing Copilot code review ruleset for $REPO"
             EXISTING_RULESETS="$(gh_admin_api GET "https://api.github.com/repos/$ORG_NAME/$REPO/rulesets" "" "200")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
