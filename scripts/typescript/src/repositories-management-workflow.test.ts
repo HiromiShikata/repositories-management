@@ -582,6 +582,13 @@ const missingStatusCheckContextRepository: RepositoryListEntry = {
   isFork: false,
   defaultBranchRef: { name: 'main' },
 };
+const adminApiForbiddenRepository: RepositoryListEntry = {
+  name: 'aburakayaz-apollo',
+  isArchived: false,
+  isPrivate: true,
+  isFork: false,
+  defaultBranchRef: { name: 'main' },
+};
 const twoRepositories: RepositoryListEntry[] = [
   mainDefaultBranchRepository,
   masterDefaultBranchRepository,
@@ -1041,7 +1048,7 @@ describe('repository-config expected skips that can never succeed', () => {
     }
   });
 
-  test('the branch protection exception lists name exactly the two documented repositories', () => {
+  test('the branch protection exception lists name exactly the documented repositories', () => {
     expect(
       shellVariableAssignment(
         branchProtectionStepName,
@@ -1054,6 +1061,40 @@ describe('repository-config expected skips that can never succeed', () => {
         'UPSTREAM_TRACKING_FORK_REPOSITORIES',
       ),
     ).toBe(upstreamTrackingForkRepository.name);
+    expect(
+      shellVariableAssignment(
+        branchProtectionStepName,
+        'ADMIN_API_FORBIDDEN_REPOSITORIES',
+      ),
+    ).toBe('aburakayaz-apollo aburakayaz-artemis aburakayaz-artemis-data');
+  });
+
+  test('an admin-api-forbidden repository is expected-skip in the branch protection step while the rest of the fleet is protected', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [adminApiForbiddenRepository, mainDefaultBranchRepository],
+    });
+    expect(result.output).toContain(
+      `EXPECTED SKIP: ${adminApiForbiddenRepository.name} is excluded from branch protection configuration because the admin API permanently refuses these operations for it`,
+    );
+    expect(requestSummaries(result)).toEqual([
+      `GET ${protectionUrl(mainDefaultBranchRepository.name, 'main')}`,
+      `PUT ${protectionUrl(mainDefaultBranchRepository.name, 'main')}`,
+    ]);
+  });
+
+  test('an admin-api-forbidden repository is expected-skip in the ruleset step while the rest of the fleet is configured', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, rulesetStepName],
+      repositories: [adminApiForbiddenRepository, mainDefaultBranchRepository],
+    });
+    expect(result.output).toContain(
+      `EXPECTED SKIP: ${adminApiForbiddenRepository.name} is excluded from Copilot code review ruleset configuration because the admin API permanently refuses these operations for it`,
+    );
+    expect(requestSummaries(result)).toEqual([
+      `GET ${rulesetsUrl(mainDefaultBranchRepository.name)}`,
+      `POST ${rulesetsUrl(mainDefaultBranchRepository.name)}`,
+    ]);
   });
 
   test('a public fork that is on neither exception list still fails the step when its protection request fails', () => {
