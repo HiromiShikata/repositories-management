@@ -168,6 +168,49 @@ jobs:
               gh pr merge --auto --squash "$PR_URL" || gh pr merge --squash "$PR_URL" || echo "Warning: Failed to merge $PR_URL"
             done
           done
+      - name: Re-enable auto-merge for stalled bot-opened pull requests
+        run: |
+          ORG_NAME="${{ env.ORG_NAME }}"
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
+          for REPO in $REPO_LIST; do
+            PR_LIST=$(gh api "repos/$ORG_NAME/$REPO/pulls?state=open&per_page=100" \
+              --jq '[.[] | select((.user.login | endswith("[bot]")) and (.user.login != "dependabot[bot]") and (.user.login != "renovate[bot]") and (.head.ref | startswith("project-common/") | not)) | {number: .number, url: .html_url, node_id: .node_id, head_sha: .head.sha}]' \
+              | jq -c '.[]') || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO"; continue; }
+            while IFS= read -r PR_JSON; do
+              [ -z "$PR_JSON" ] && continue
+              PR_NUMBER=$(printf '%s' "$PR_JSON" | jq -r '.number')
+              PR_URL=$(printf '%s' "$PR_JSON" | jq -r '.url')
+              PR_NODE_ID=$(printf '%s' "$PR_JSON" | jq -r '.node_id')
+              HEAD_SHA=$(printf '%s' "$PR_JSON" | jq -r '.head_sha')
+              CHECK_STATE=$(gh api "repos/$ORG_NAME/$REPO/commits/$HEAD_SHA/check-runs" --jq '[.check_runs[] | {name: .name, status: .status, conclusion: .conclusion, at: (.completed_at // .started_at)}] | group_by(.name) | map(sort_by(.at) | last) | if length == 0 then "nochecks" elif any(.status != "completed") then "pending" elif any(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral") then "failing" else "passing" end') || { echo "Warning: Failed to read check runs for $PR_URL"; continue; }
+              if [ "$CHECK_STATE" != "passing" ]; then
+                echo "Skipping $PR_URL: check state is $CHECK_STATE"
+                continue
+              fi
+              AUTOMERGE_DATA=$(gh api graphql \
+                -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){autoMergeRequest{enabledAt}timelineItems(last:5,itemTypes:[AUTO_MERGE_ENABLED_EVENT,AUTO_MERGE_DISABLED_EVENT]){nodes{__typename...on AutoMergeEnabledEvent{actor{login}}...on AutoMergeDisabledEvent{actor{login}}}}}}}' \
+                -F owner="$ORG_NAME" -F name="$REPO" -F number="$PR_NUMBER") || { echo "Warning: Failed to query auto-merge state for $PR_URL"; continue; }
+              if printf '%s' "$AUTOMERGE_DATA" | jq -e '.data.repository.pullRequest.autoMergeRequest != null' > /dev/null 2>&1; then
+                echo "Skipping $PR_URL: auto-merge is already enabled"
+                continue
+              fi
+              LAST_EVENT_TYPE=$(printf '%s' "$AUTOMERGE_DATA" | jq -r 'if (.data.repository.pullRequest.timelineItems.nodes | length) > 0 then .data.repository.pullRequest.timelineItems.nodes | last | .__typename else "" end')
+              LAST_ACTOR=$(printf '%s' "$AUTOMERGE_DATA" | jq -r 'if (.data.repository.pullRequest.timelineItems.nodes | length) > 0 then .data.repository.pullRequest.timelineItems.nodes | last | .actor.login else "" end')
+              if [ "$LAST_EVENT_TYPE" = "AutoMergeDisabledEvent" ] && ! printf '%s' "$LAST_ACTOR" | grep -q '\[bot\]'; then
+                echo "Skipping $PR_URL: auto-merge was deliberately disabled by human actor $LAST_ACTOR"
+                continue
+              fi
+              echo "Re-enabling auto-merge for $PR_URL (last event: ${LAST_EVENT_TYPE:-none}, actor: ${LAST_ACTOR:-none})"
+              ENABLE_RESPONSE=$(gh api graphql \
+                -f query='mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:SQUASH}){clientMutationId}}' \
+                -F id="$PR_NODE_ID") || { echo "Warning: Failed to re-enable auto-merge for $PR_URL"; continue; }
+              if printf '%s' "$ENABLE_RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
+                echo "Warning: Failed to re-enable auto-merge for $PR_URL: $(printf '%s' "$ENABLE_RESPONSE" | jq -r '.errors[0].message // ""')"
+              else
+                echo "Auto-merge re-enabled for $PR_URL"
+              fi
+            done <<< "$PR_LIST"
+          done
 
   label-sync:
     runs-on: ubuntu-latest
