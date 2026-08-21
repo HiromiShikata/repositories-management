@@ -83,6 +83,36 @@
   aliases: []
   description: ''
   delete: false
+- name: triager
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: liaison
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: analyst
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: developer
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: pr-reviewer
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
+- name: gift
+  color: '#0E8A16'
+  aliases: []
+  description: ''
+  delete: false
 - name: llm-model:claude-opus-5
   color: '#0E8A16'
   aliases:
