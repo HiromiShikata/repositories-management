@@ -7,11 +7,11 @@ const workflowExpressionValues = (action: string): Record<string, string> => ({
   'github.event.pull_request.node_id || github.event.issue.node_id':
     'I_stubResourceNodeId',
   'env.project_v2_id': 'PVT_stubProjectId',
-  'env.unread': 'Unread',
+  'env.awaiting_workspace': 'Awaiting Workspace',
   'github.event.action': action,
 });
 
-const moveToUnreadRunScript = (
+const moveToAwaitingWorkspaceRunScript = (
   workflowContent: string,
   action: string,
 ): string => {
@@ -85,7 +85,7 @@ case "$INVOCATION" in
 esac
 `;
 
-const runMoveToUnreadStep = (
+const runMoveToAwaitingWorkspaceStep = (
   workflowContent: string,
   action: string,
   existingStatus: string,
@@ -99,7 +99,7 @@ const runMoveToUnreadStep = (
     const scriptPath = path.join(sandbox, 'step.sh');
     fs.writeFileSync(
       scriptPath,
-      moveToUnreadRunScript(workflowContent, action),
+      moveToAwaitingWorkspaceRunScript(workflowContent, action),
     );
     const statusWriteLog = path.join(sandbox, 'status-writes.log');
     fs.writeFileSync(statusWriteLog, '');
@@ -281,48 +281,48 @@ describe('umino-project.yml workflow', () => {
   });
 
   describe('status revert steps condition', () => {
-    const moveToUnreadStepStart = workflowContent.indexOf(
+    const moveToAwaitingWorkspaceStepStart = workflowContent.indexOf(
       '- name: Move issue to',
     );
     const clearNextActionDateStepStart = workflowContent.indexOf(
       '- run: |',
-      moveToUnreadStepStart,
+      moveToAwaitingWorkspaceStepStart,
     );
     const createIssueStepStart = workflowContent.indexOf(
       '- name: Create Issue',
       clearNextActionDateStepStart,
     );
-    const moveToUnreadStepBlock = workflowContent.slice(
-      moveToUnreadStepStart,
+    const moveToAwaitingWorkspaceStepBlock = workflowContent.slice(
+      moveToAwaitingWorkspaceStepStart,
       clearNextActionDateStepStart,
     );
     const clearNextActionDateStepBlock = workflowContent.slice(
       clearNextActionDateStepStart,
       createIssueStepStart,
     );
-    const moveToUnreadIfCondition = moveToUnreadStepBlock.slice(
-      moveToUnreadStepBlock.indexOf('if:'),
+    const moveToAwaitingWorkspaceIfCondition = moveToAwaitingWorkspaceStepBlock.slice(
+      moveToAwaitingWorkspaceStepBlock.indexOf('if:'),
     );
     const clearNextActionDateIfCondition = clearNextActionDateStepBlock.slice(
       clearNextActionDateStepBlock.indexOf('if:'),
     );
 
-    test('move-to-unread step does not revert status on assigned action', () => {
-      expect(moveToUnreadIfCondition).not.toContain("'assigned'");
+    test('move-to-awaiting-workspace step does not revert status on assigned action', () => {
+      expect(moveToAwaitingWorkspaceIfCondition).not.toContain("'assigned'");
     });
 
-    test('move-to-unread step does not revert status on unassigned action', () => {
-      expect(moveToUnreadIfCondition).not.toContain("'unassigned'");
+    test('move-to-awaiting-workspace step does not revert status on unassigned action', () => {
+      expect(moveToAwaitingWorkspaceIfCondition).not.toContain("'unassigned'");
     });
 
-    test('move-to-unread step still fires on opened action', () => {
-      expect(moveToUnreadIfCondition).toContain(
+    test('move-to-awaiting-workspace step still fires on opened action', () => {
+      expect(moveToAwaitingWorkspaceIfCondition).toContain(
         "github.event.action == 'opened'",
       );
     });
 
-    test('move-to-unread step still fires on reopened action', () => {
-      expect(moveToUnreadIfCondition).toContain(
+    test('move-to-awaiting-workspace step still fires on reopened action', () => {
+      expect(moveToAwaitingWorkspaceIfCondition).toContain(
         "github.event.action == 'reopened'",
       );
     });
@@ -440,17 +440,17 @@ describe('umino-project.yml workflow', () => {
     });
   });
 
-  describe('move-to-unread step behaviour', () => {
-    const unreadOptionIdMatch = workflowContent.match(/-f optionId="([^"]+)"/);
-    const unreadOptionId =
-      unreadOptionIdMatch === null ? '' : unreadOptionIdMatch[1];
+  describe('move-to-awaiting-workspace step behaviour', () => {
+    const awaitingWorkspaceOptionIdMatch = workflowContent.match(/-f optionId="([^"]+)"/);
+    const awaitingWorkspaceOptionId =
+      awaitingWorkspaceOptionIdMatch === null ? '' : awaitingWorkspaceOptionIdMatch[1];
 
-    test('the workflow declares the Unread option id the step writes', () => {
-      expect(unreadOptionId).not.toBe('');
+    test('the workflow declares the Awaiting Workspace option id the step writes', () => {
+      expect(awaitingWorkspaceOptionId).not.toBe('');
     });
 
     test('keeps a Status that was already set on a newly opened item', () => {
-      const result = runMoveToUnreadStep(
+      const result = runMoveToAwaitingWorkspaceStep(
         workflowContent,
         'opened',
         'In Tmux by agent',
@@ -461,22 +461,22 @@ describe('umino-project.yml workflow', () => {
       expect(result.statusWrites).toEqual([]);
     });
 
-    test('writes Unread on a newly opened item that has no Status yet', () => {
-      const result = runMoveToUnreadStep(workflowContent, 'opened', '');
+    test('writes Awaiting Workspace on a newly opened item that has no Status yet', () => {
+      const result = runMoveToAwaitingWorkspaceStep(workflowContent, 'opened', '');
 
       expect(result.stderr).toBe('');
       expect(result.exitCode).toBe(0);
       expect(result.statusWrites).toHaveLength(1);
-      expect(result.statusWrites[0]).toContain(`optionId=${unreadOptionId}`);
+      expect(result.statusWrites[0]).toContain(`optionId=${awaitingWorkspaceOptionId}`);
     });
 
-    test('writes Unread on a reopened item even when it already has a Status', () => {
-      const result = runMoveToUnreadStep(workflowContent, 'reopened', 'Done');
+    test('writes Awaiting Workspace on a reopened item even when it already has a Status', () => {
+      const result = runMoveToAwaitingWorkspaceStep(workflowContent, 'reopened', 'Done');
 
       expect(result.stderr).toBe('');
       expect(result.exitCode).toBe(0);
       expect(result.statusWrites).toHaveLength(1);
-      expect(result.statusWrites[0]).toContain(`optionId=${unreadOptionId}`);
+      expect(result.statusWrites[0]).toContain(`optionId=${awaitingWorkspaceOptionId}`);
     });
   });
 });
