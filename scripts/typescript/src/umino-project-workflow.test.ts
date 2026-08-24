@@ -288,8 +288,8 @@ describe('umino-project.yml workflow', () => {
       '- run: |',
       moveToUnreadStepStart,
     );
-    const createIssueStepStart = workflowContent.indexOf(
-      '- name: Create Issue',
+    const autoAssignStepStart = workflowContent.indexOf(
+      '- name: Auto assign issue to owner',
       clearNextActionDateStepStart,
     );
     const moveToUnreadStepBlock = workflowContent.slice(
@@ -298,7 +298,7 @@ describe('umino-project.yml workflow', () => {
     );
     const clearNextActionDateStepBlock = workflowContent.slice(
       clearNextActionDateStepStart,
-      createIssueStepStart,
+      autoAssignStepStart,
     );
     const moveToUnreadIfCondition = moveToUnreadStepBlock.slice(
       moveToUnreadStepBlock.indexOf('if:'),
