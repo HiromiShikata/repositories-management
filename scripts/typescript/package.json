@@ -12,8 +12,7 @@
     "lint-fix": "eslint src --fix",
     "fmt": "npm run prettier && npm run lint-fix",
     "build": "tsc -p ./tsconfig.build.json",
-    "test": "jest",
-    "run:prepare-offline-task": "ts-node src/adapter/entry-points/cli/prepare-offline-task.ts"
+    "test": "jest"
   },
   "repository": {
     "type": "git",
