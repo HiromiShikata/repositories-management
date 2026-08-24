@@ -32,7 +32,7 @@ on:
       - synchronize
 
 env:
-  unread: Unread
+  awaiting_workspace: Awaiting Workspace
   in_progress: In Progress
   user: HiromiShikata
   project_id: 48
@@ -59,7 +59,7 @@ jobs:
           client-id: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
           private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
           owner: HiromiShikata
-      - name: Move issue to ${{ env.unread }}
+      - name: Move issue to ${{ env.awaiting_workspace }}
         run: |
           RESOURCE_NODE_ID="${{ github.event.pull_request.node_id || github.event.issue.node_id }}"
           PROJECT_V2_ID="${{ env.project_v2_id }}"
@@ -98,7 +98,7 @@ jobs:
               --jq '.data.node.fieldValueByName.name // ""')
 
             if [ -n "$EXISTING_STATUS" ]; then
-              echo "Status is already $EXISTING_STATUS; keeping it instead of overwriting with ${{ env.unread }}"
+              echo "Status is already $EXISTING_STATUS; keeping it instead of overwriting with ${{ env.awaiting_workspace }}"
               exit 0
             fi
           fi
@@ -108,7 +108,7 @@ jobs:
             -f projectId="$PROJECT_V2_ID" \
             -f itemId="$ITEM_ID" \
             -f fieldId="PVTSSF_lAHOAGJHa84AFWnrzgDFcxE" \
-            -f optionId="f75ad846"
+            -f optionId="d1c19cce"
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         if: >-
