@@ -50,6 +50,14 @@ describe('enable-auto-merge-error-handler.sh', () => {
     expect(result.stdout).toContain('Warning');
   });
 
+  test('exits 0 with warning when branch has no required protected branch rules', () => {
+    const result = run(
+      '{"data":{"enablePullRequestAutoMerge":null},"errors":[{"type":"UNPROCESSABLE","path":["enablePullRequestAutoMerge"],"message":"Pull request Branch does not have required protected branch rules"}]}',
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Warning');
+  });
+
   test('exits 1 for unexpected errors so the job fails visibly', () => {
     const result = run(
       '{"errors":[{"message":"Some other unexpected GraphQL error"}]}',
