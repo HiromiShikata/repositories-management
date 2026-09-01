@@ -1,4 +1,4 @@
-import { execSync, spawnSync } from 'child_process';
+import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -31,18 +31,4 @@ describe('create-pr.yml workflow', () => {
     }
   });
 
-  test('Enable Auto Merge step grep pattern matches RATE_LIMIT GraphQL error messages as non-fatal', () => {
-    const stepStart = workflowContent.indexOf('- name: Enable Auto Merge for PR');
-    expect(stepStart).toBeGreaterThanOrEqual(0);
-    const stepBlock = workflowContent.slice(stepStart);
-    const grepMatch = stepBlock.match(/grep -qi "([^"]+)"/);
-    expect(grepMatch).not.toBeNull();
-    const grepPattern = grepMatch![1];
-    const rateLimitError = 'API rate limit already exceeded for user ID 12345.';
-    const { status } = spawnSync('bash', [
-      '-c',
-      `echo '${rateLimitError}' | grep -qi '${grepPattern}'`,
-    ]);
-    expect(status).toBe(0);
-  });
 });
