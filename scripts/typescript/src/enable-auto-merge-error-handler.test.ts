@@ -42,6 +42,14 @@ describe('enable-auto-merge-error-handler.sh', () => {
     expect(result.stdout).toContain('Warning');
   });
 
+  test('exits 0 with warning when error type is RATE_LIMIT even if message does not match pattern', () => {
+    const result = run(
+      '{"errors":[{"type":"RATE_LIMIT","message":"GitHub API error 403"}]}',
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Warning');
+  });
+
   test('exits 1 for unexpected errors so the job fails visibly', () => {
     const result = run(
       '{"errors":[{"message":"Some other unexpected GraphQL error"}]}',
