@@ -1,7 +1,4 @@
 #!/bin/bash
-# Reads the GraphQL API response from stdin, logs it, then exits 0 for success
-# or non-fatal errors (unstable, already-enabled, rate-limit) and exits 1 for
-# unexpected errors so the job fails visibly.
 RESPONSE=$(cat)
 echo "$RESPONSE"
 if ! echo "$RESPONSE" | jq -e '.errors' >/dev/null 2>&1; then

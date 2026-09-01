@@ -54,6 +54,7 @@ jobs:
             ".github/workflows/commit-lint.yml"
             ".github/workflows/configs/commitlint.config.cjs"
             ".github/workflows/create-pr.yml"
+            "scripts/enable-auto-merge-error-handler.sh"
             ".github/workflows/api-created_issue_pr.yml"
             ".github/workflows/close-manual-prs.yml"
             ".github/workflows/secret-scan.yml"
