@@ -30,4 +30,5 @@ describe('create-pr.yml workflow', () => {
       expect(runsOn).toBe('ubuntu-latest');
     }
   });
+
 });
