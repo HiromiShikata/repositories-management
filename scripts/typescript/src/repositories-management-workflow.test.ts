@@ -1594,3 +1594,19 @@ describe('update-repos sync pull request creation and approval', () => {
     expect(output).not.toContain('(attempt 3 of 3); retrying in 10s');
   });
 });
+
+describe('update-repos FILES_TO_SYNC', () => {
+  test('.prettierignore is listed in FILES_TO_SYNC', () => {
+    const stepBlock = extractStepBlock(syncStepName);
+    expect(stepBlock).toContain('".prettierignore"');
+  });
+
+  test('the synced .prettierignore excludes shell scripts', () => {
+    const prettierIgnorePath = path.join(
+      __dirname,
+      '../../../.prettierignore',
+    );
+    const prettierIgnoreContent = fs.readFileSync(prettierIgnorePath, 'utf8');
+    expect(prettierIgnoreContent).toContain('*.sh');
+  });
+});
