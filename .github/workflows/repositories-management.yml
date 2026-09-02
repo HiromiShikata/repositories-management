@@ -65,6 +65,7 @@ jobs:
             ".github/dependabot.yml"
             "renovate.json"
             ".gitleaks.toml"
+            ".prettierignore"
             )
           for REPO in $REPO_LIST; do
             echo "REPO: $REPO"
