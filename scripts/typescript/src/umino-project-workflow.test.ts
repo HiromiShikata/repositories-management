@@ -3,6 +3,118 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+const clearNextActionDateExpressionValues: Record<string, string> = {
+  'github.repository': 'StubOwner/stub-repo',
+  'env.project_v2_id': 'PVT_stubProjectId',
+  'env.field_id': 'PVTF_stubFieldId',
+};
+
+const clearNextActionDateRunScript = (workflowContent: string): string => {
+  const lines = workflowContent.split('\n');
+  const moveToAwaitingWorkspaceLineIndex = lines.findIndex((line) =>
+    line.includes('- name: Move issue to'),
+  );
+  const runLineIndex = lines.findIndex(
+    (line, index) =>
+      index > moveToAwaitingWorkspaceLineIndex &&
+      line.trim() === '- run: |',
+  );
+  const bodyIndent = lines[runLineIndex].indexOf('run:') + 2;
+  const bodyLines: string[] = [];
+  for (let index = runLineIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() !== '' && !line.startsWith(' '.repeat(bodyIndent))) {
+      break;
+    }
+    bodyLines.push(line.slice(bodyIndent));
+  }
+  return bodyLines
+    .join('\n')
+    .replace(/\$\{\{([^}]*)\}\}/g, (_match: string, inner: string): string => {
+      const expression = inner.trim();
+      const value = clearNextActionDateExpressionValues[expression];
+      if (value === undefined) {
+        throw new Error(`Unhandled workflow expression: ${expression}`);
+      }
+      return value;
+    });
+};
+
+const curlStubForClearNextActionDate = `#!/bin/bash
+PREV_ARG=""
+DATA_ARG=""
+for ARG in "$@"; do
+  case "$PREV_ARG" in
+    --data|-d)
+      DATA_ARG="$ARG"
+      ;;
+  esac
+  PREV_ARG="$ARG"
+done
+
+N=$(cat "$STUB_CURL_DATA_DIR/count" 2>/dev/null || echo 0)
+N=$((N+1))
+echo "$N" > "$STUB_CURL_DATA_DIR/count"
+printf '%s' "$DATA_ARG" > "$STUB_CURL_DATA_DIR/$N"
+
+if echo "$DATA_ARG" | grep -q "clearProjectV2ItemFieldValue"; then
+  echo '{"data":{"clearProjectV2ItemFieldValue":{"clientMutationId":null}}}'
+elif echo "$DATA_ARG" | grep -q "pullRequest"; then
+  echo '{"data":{"repository":{"pullRequest":{"projectItems":{"nodes":[{"id":"PVTI_stubItemId"}]}}}}}'
+else
+  echo '{"data":{"repository":{"issue":{"projectItems":{"nodes":[{"id":"PVTI_stubItemId"}]}}}}}'
+fi
+`;
+
+const runClearNextActionDateStep = (
+  workflowContent: string,
+  eventName: string,
+  prNumber: string,
+  issueNumber: string,
+): { exitCode: number | null; stderr: string; firstQueryData: string } => {
+  const sandbox = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'clear-next-action-'),
+  );
+  try {
+    const stubDirectory = path.join(sandbox, 'bin');
+    fs.mkdirSync(stubDirectory);
+    const curlStubPath = path.join(stubDirectory, 'curl');
+    fs.writeFileSync(curlStubPath, curlStubForClearNextActionDate, {
+      mode: 0o755,
+    });
+    const curlDataDir = path.join(sandbox, 'curl-data');
+    fs.mkdirSync(curlDataDir);
+    const scriptPath = path.join(sandbox, 'step.sh');
+    fs.writeFileSync(
+      scriptPath,
+      clearNextActionDateRunScript(workflowContent),
+    );
+    const result = spawnSync('bash', ['-e', scriptPath], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${stubDirectory}:${process.env.PATH ?? ''}`,
+        GH_PROJECT_TOKEN: 'stub_token',
+        EVENT_NAME: eventName,
+        PR_NUMBER: prNumber,
+        ISSUE_NUMBER: issueNumber,
+        STUB_CURL_DATA_DIR: curlDataDir,
+      },
+    });
+    const firstDataPath = path.join(curlDataDir, '1');
+    const firstQueryData = fs.existsSync(firstDataPath)
+      ? fs.readFileSync(firstDataPath, 'utf8')
+      : '';
+    return {
+      exitCode: result.status,
+      stderr: result.stderr,
+      firstQueryData,
+    };
+  } finally {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  }
+};
+
 const workflowExpressionValues = (action: string): Record<string, string> => ({
   'github.event.pull_request.node_id || github.event.issue.node_id':
     'I_stubResourceNodeId',
@@ -477,6 +589,34 @@ describe('umino-project.yml workflow', () => {
       expect(result.exitCode).toBe(0);
       expect(result.statusWrites).toHaveLength(1);
       expect(result.statusWrites[0]).toContain(`optionId=${awaitingWorkspaceOptionId}`);
+    });
+  });
+
+  describe('clear-next-action-date step behaviour', () => {
+    test('routes to pullRequest entity type and uses PR_NUMBER on pull_request event', () => {
+      const result = runClearNextActionDateStep(
+        workflowContent,
+        'pull_request',
+        '42',
+        '',
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.firstQueryData).toContain('pullRequest');
+      expect(result.firstQueryData).toContain('42');
+    });
+
+    test('routes to issue entity type and uses ISSUE_NUMBER on issues event', () => {
+      const result = runClearNextActionDateStep(
+        workflowContent,
+        'issues',
+        '',
+        '99',
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.firstQueryData).not.toContain('pullRequest');
+      expect(result.firstQueryData).toContain('99');
     });
   });
 });
