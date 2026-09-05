@@ -3,6 +3,9 @@
 .prettierignore
 .gitkeep
 *.sh
+.gitattributes
+.gitleaks.toml
+.npmrc
 .idea
 reports
 dist

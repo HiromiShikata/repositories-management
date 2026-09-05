@@ -1602,11 +1602,26 @@ describe('update-repos FILES_TO_SYNC', () => {
   });
 
   test('the synced .prettierignore excludes shell scripts', () => {
-    const prettierIgnorePath = path.join(
-      __dirname,
-      '../../../.prettierignore',
-    );
+    const prettierIgnorePath = path.join(__dirname, '../../../.prettierignore');
     const prettierIgnoreContent = fs.readFileSync(prettierIgnorePath, 'utf8');
     expect(prettierIgnoreContent).toContain('*.sh');
+  });
+
+  test('the synced .prettierignore excludes .gitattributes', () => {
+    const prettierIgnorePath = path.join(__dirname, '../../../.prettierignore');
+    const prettierIgnoreContent = fs.readFileSync(prettierIgnorePath, 'utf8');
+    expect(prettierIgnoreContent).toContain('.gitattributes');
+  });
+
+  test('the synced .prettierignore excludes .gitleaks.toml', () => {
+    const prettierIgnorePath = path.join(__dirname, '../../../.prettierignore');
+    const prettierIgnoreContent = fs.readFileSync(prettierIgnorePath, 'utf8');
+    expect(prettierIgnoreContent).toContain('.gitleaks.toml');
+  });
+
+  test('the synced .prettierignore excludes .npmrc', () => {
+    const prettierIgnorePath = path.join(__dirname, '../../../.prettierignore');
+    const prettierIgnoreContent = fs.readFileSync(prettierIgnorePath, 'utf8');
+    expect(prettierIgnoreContent).toContain('.npmrc');
   });
 });
