@@ -40,6 +40,17 @@ describe('UminoBotCollaboratorInviteUseCase', () => {
     expect(repository.acceptInvitation).not.toHaveBeenCalled();
   });
 
+  test('does not call inviteAsWriteCollaborator when repository list is empty', async () => {
+    const repository = createMockRepository();
+    repository.listNonArchivedRepositoryNames.mockResolvedValue([]);
+
+    const useCase = new UminoBotCollaboratorInviteUseCase(repository);
+    await useCase.run();
+
+    expect(repository.inviteAsWriteCollaborator).not.toHaveBeenCalled();
+    expect(repository.acceptInvitation).not.toHaveBeenCalled();
+  });
+
   test('handles multiple repos with mixed invited and alreadyCollaborator results', async () => {
     const repository = createMockRepository();
     repository.listNonArchivedRepositoryNames.mockResolvedValue([
