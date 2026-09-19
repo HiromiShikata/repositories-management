@@ -17,7 +17,7 @@ jobs:
       - run: |
           cd scripts/typescript
           npm i
-          node src/adapter/entry-points/cli/invite-umino-bot-monthly.ts
+          npx tsx src/adapter/entry-points/cli/invite-umino-bot-monthly.ts
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           UMINO_BOT_TOKEN: ${{ secrets.UMINO_BOT_TOKEN }}
