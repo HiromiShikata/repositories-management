@@ -1,0 +1,23 @@
+name: Invite umino-bot as monthly collaborator
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+jobs:
+  invite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+      - run: |
+          cd scripts/typescript
+          npm i
+          node src/adapter/entry-points/cli/invite-umino-bot-monthly.ts
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          UMINO_BOT_TOKEN: ${{ secrets.UMINO_BOT_TOKEN }}
