@@ -58,6 +58,14 @@ describe('enable-auto-merge-error-handler.sh', () => {
     expect(result.stdout).toContain('Warning');
   });
 
+  test('exits 0 with warning when protected branch message has word order: protected before required', () => {
+    const result = run(
+      '{"data":null,"errors":[{"type":"UNPROCESSABLE","message":"Protected branch requires a review before merging"}]}',
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Warning');
+  });
+
   test('exits 1 for unexpected errors so the job fails visibly', () => {
     const result = run(
       '{"errors":[{"message":"Some other unexpected GraphQL error"}]}',
