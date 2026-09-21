@@ -12,7 +12,6 @@
     "lint-fix": "eslint src --fix",
     "fmt": "npm run prettier && npm run lint-fix",
     "build": "tsc -p ./tsconfig.build.json",
-    "pretest": "test -d node_modules/ts-jest/node_modules/typescript || cp -r node_modules/@typescript/typescript6 node_modules/ts-jest/node_modules/typescript",
     "test": "jest"
   },
   "repository": {
@@ -45,7 +44,6 @@
     "@types/node": "^24.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
-    "@typescript/typescript6": "6.0.2",
     "check-node-version": "^4.2.1",
     "commitlint": "^21.0.0",
     "conventional-changelog-conventionalcommits": "^10.0.0",
