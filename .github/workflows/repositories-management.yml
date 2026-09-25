@@ -79,12 +79,7 @@ jobs:
               cp $FILE $REPO/$FILE
             done
 
-            FILE=".github/workflows/assign-all-cards-to-owner.yml"
-            rm -f $REPO/$FILE
-            FILE=".github/workflows/assign-all-card-to-owner.yml"
-            rm -f $REPO/$FILE
-            FILE=".github/workflows/empty-format-test-job.yml"
-            rm -f $REPO/$FILE
+            "$GITHUB_WORKSPACE/scripts/remove-legacy-workflow-files.sh" "$REPO"
             cd $REPO
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"

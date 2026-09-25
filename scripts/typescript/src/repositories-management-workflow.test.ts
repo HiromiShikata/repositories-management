@@ -1636,20 +1636,14 @@ describe('update-repos FILES_TO_SYNC', () => {
   });
 });
 
-const legacyWorkflowFileRemovalScript = (): string => {
-  const stepBlock = extractStepBlock(syncStepName);
-  const start = stepBlock.indexOf(
-    'FILE=".github/workflows/assign-all-cards-to-owner.yml"',
-  );
-  expect(start).toBeGreaterThanOrEqual(0);
-  const end = stepBlock.indexOf('\n            cd $REPO', start);
-  expect(end).toBeGreaterThan(start);
-  return stepBlock
-    .slice(start, end)
-    .split('\n')
-    .map((line) => line.replace(/^ {12}/, ''))
-    .join('\n');
-};
+const REPO_ROOT = path.join(__dirname, '../../..');
+const LEGACY_REMOVAL_SCRIPT_PATH = path.join(
+  REPO_ROOT,
+  'scripts/remove-legacy-workflow-files.sh',
+);
+
+const sandboxDirectoriesPendingCleanup: string[] = [];
+const sandboxDirectoriesEverCreated: string[] = [];
 
 const remainsAfterLegacyWorkflowFileRemoval = (
   syncedRepositoryRelativeFilePath: string,
@@ -1658,6 +1652,8 @@ const remainsAfterLegacyWorkflowFileRemoval = (
   const sandbox = fs.mkdtempSync(
     path.join(os.tmpdir(), 'repositories-management-legacy-file-removal-'),
   );
+  sandboxDirectoriesPendingCleanup.push(sandbox);
+  sandboxDirectoriesEverCreated.push(sandbox);
   const clonedRepositoryDirectory = path.join(sandbox, 'example-repo');
   const targetFilePath = path.join(
     clonedRepositoryDirectory,
@@ -1670,18 +1666,24 @@ const remainsAfterLegacyWorkflowFileRemoval = (
     fs.mkdirSync(clonedRepositoryDirectory, { recursive: true });
   }
 
-  const script = [
-    'set -e',
-    `REPO=${clonedRepositoryDirectory}`,
-    legacyWorkflowFileRemovalScript(),
-  ].join('\n');
-  const outcome = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+  const outcome = spawnSync(
+    'bash',
+    [LEGACY_REMOVAL_SCRIPT_PATH, clonedRepositoryDirectory],
+    { encoding: 'utf8' },
+  );
   expect(outcome.status).toBe(0);
 
   return fs.existsSync(targetFilePath);
 };
 
 describe('update-repos legacy workflow file removal', () => {
+  afterEach(() => {
+    for (const sandbox of sandboxDirectoriesPendingCleanup) {
+      fs.rmSync(sandbox, { recursive: true, force: true });
+    }
+    sandboxDirectoriesPendingCleanup.length = 0;
+  });
+
   test('removes the retired assign-all-cards-to-owner.yml workflow file from every synced repository', () => {
     expect(
       remainsAfterLegacyWorkflowFileRemoval(
@@ -1721,4 +1723,11 @@ describe('update-repos legacy workflow file removal', () => {
       ).toBe(false);
     },
   );
+
+  test('removes every sandbox directory this describe block has ever created', () => {
+    expect(sandboxDirectoriesEverCreated.length).toBeGreaterThan(0);
+    for (const sandbox of sandboxDirectoriesEverCreated) {
+      expect(fs.existsSync(sandbox)).toBe(false);
+    }
+  });
 });
