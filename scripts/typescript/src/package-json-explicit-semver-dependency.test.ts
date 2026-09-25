@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 const typescriptPackageJsonPath = path.join(__dirname, '../package.json');
@@ -60,5 +61,28 @@ describe('package.json explicit dependencies', () => {
     expect(
       typeof typesSemverRange === 'string' && typesSemverRange.length > 0,
     ).toBe(true);
+  });
+
+  test('readDevDependencyRange returns undefined when dependencyName is absent from devDependencies', () => {
+    const temporaryDirectoryPath = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'package-json-explicit-semver-dependency-'),
+    );
+    const packageJsonWithoutSemverPath = path.join(
+      temporaryDirectoryPath,
+      'package.json',
+    );
+    fs.writeFileSync(
+      packageJsonWithoutSemverPath,
+      JSON.stringify({ devDependencies: {} }),
+      'utf8',
+    );
+
+    try {
+      expect(
+        readDevDependencyRange(packageJsonWithoutSemverPath, 'semver'),
+      ).toBeUndefined();
+    } finally {
+      fs.rmSync(temporaryDirectoryPath, { recursive: true, force: true });
+    }
   });
 });
