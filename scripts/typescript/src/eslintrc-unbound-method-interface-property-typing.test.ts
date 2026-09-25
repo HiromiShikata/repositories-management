@@ -131,10 +131,7 @@ const runRealEslintOnFile = (fileRelativePath: string): LintResult => {
       `expected the real eslint binary to exit 0 (no lint errors) or 1 (lint errors found) while linting "${fileRelativePath}", got exit code ${outcome.status}, signal ${outcome.signal}. stderr: ${outcome.stderr}`,
     );
   }
-  const results = parseJsonArray(
-    outcome.stdout,
-    'eslint --format json output',
-  );
+  const results = parseJsonArray(outcome.stdout, 'eslint --format json output');
   const [rawResult] = results;
   if (rawResult === undefined) {
     throw new Error(
@@ -219,9 +216,7 @@ describe('scripts/typescript eslintrc unbound-method interface property typing',
     );
 
     for (const memberName of REPOSITORY_INTERFACE_MEMBER_NAMES) {
-      if (
-        !isDeclaredAsFunctionTypedProperty(interfaceSourceText, memberName)
-      ) {
+      if (!isDeclaredAsFunctionTypedProperty(interfaceSourceText, memberName)) {
         throw new Error(
           `expected interface member "${memberName}" in "${REPOSITORY_INTERFACE_FILE_RELATIVE_PATH}" to be declared as a function-typed property (e.g. "${memberName}: (...) => ...;"), not method-shorthand syntax. Source:\n${interfaceSourceText}`,
         );
