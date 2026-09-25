@@ -1653,6 +1653,7 @@ const legacyWorkflowFileRemovalScript = (): string => {
 
 const remainsAfterLegacyWorkflowFileRemoval = (
   syncedRepositoryRelativeFilePath: string,
+  shouldSeedFileBeforeRemoval = true,
 ): boolean => {
   const sandbox = fs.mkdtempSync(
     path.join(os.tmpdir(), 'repositories-management-legacy-file-removal-'),
@@ -1662,8 +1663,12 @@ const remainsAfterLegacyWorkflowFileRemoval = (
     clonedRepositoryDirectory,
     syncedRepositoryRelativeFilePath,
   );
-  fs.mkdirSync(path.dirname(targetFilePath), { recursive: true });
-  fs.writeFileSync(targetFilePath, 'placeholder content');
+  if (shouldSeedFileBeforeRemoval) {
+    fs.mkdirSync(path.dirname(targetFilePath), { recursive: true });
+    fs.writeFileSync(targetFilePath, 'placeholder content');
+  } else {
+    fs.mkdirSync(clonedRepositoryDirectory, { recursive: true });
+  }
 
   const script = [
     'set -e',
@@ -1700,4 +1705,20 @@ describe('update-repos legacy workflow file removal', () => {
       ),
     ).toBe(false);
   });
+
+  test.each([
+    '.github/workflows/assign-all-cards-to-owner.yml',
+    '.github/workflows/assign-all-card-to-owner.yml',
+    '.github/workflows/empty-format-test-job.yml',
+  ])(
+    'exits successfully and leaves %s absent when it was never present in the synced repository',
+    (syncedRepositoryRelativeFilePath) => {
+      expect(
+        remainsAfterLegacyWorkflowFileRemoval(
+          syncedRepositoryRelativeFilePath,
+          false,
+        ),
+      ).toBe(false);
+    },
+  );
 });
