@@ -37,7 +37,8 @@ export class OctokitUminoBotCollaboratorRepository implements UminoBotCollaborat
       username: 'umino-bot',
       permission: 'push',
     });
-    if (response.status === 204) {
+    const httpResponseStatusCode: number = response.status;
+    if (httpResponseStatusCode === 204) {
       return { kind: 'alreadyCollaborator' };
     }
     return { kind: 'invited', invitationId: response.data.id };
