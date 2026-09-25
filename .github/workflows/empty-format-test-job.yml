@@ -13,7 +13,14 @@ jobs:
       - uses: step-security/harden-runner@v2
         with:
           egress-policy: audit
-      - run: echo "test"
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: scripts/typescript
+      - run: npm test
+        working-directory: scripts/typescript
 
   format:
     runs-on: ubuntu-latest
