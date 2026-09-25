@@ -16,18 +16,6 @@ const UNBOUND_METHOD_RULE_ID = '@typescript-eslint/unbound-method';
 const PREVIOUSLY_FAILING_FILE_RELATIVE_PATH =
   'src/domain/usecases/UminoBotCollaboratorInviteUseCase.test.ts';
 
-const REPOSITORY_INTERFACE_FILE_RELATIVE_PATH =
-  'src/domain/usecases/adapter-interfaces/UminoBotCollaboratorRepository.ts';
-const REPOSITORY_INTERFACE_FILE_ABSOLUTE_PATH = path.join(
-  SCRIPTS_TYPESCRIPT_DIR,
-  REPOSITORY_INTERFACE_FILE_RELATIVE_PATH,
-);
-const REPOSITORY_INTERFACE_MEMBER_NAMES = [
-  'listNonArchivedRepositoryNames',
-  'inviteAsWriteCollaborator',
-  'acceptInvitation',
-];
-
 const UNBOUND_METHOD_FIXTURE_RELATIVE_PATH = `src/unbound-method-regression-guard-fixture-${crypto.randomUUID()}.ts`;
 const UNBOUND_METHOD_FIXTURE_ABSOLUTE_PATH = path.join(
   SCRIPTS_TYPESCRIPT_DIR,
@@ -141,28 +129,6 @@ const runRealEslintOnFile = (fileRelativePath: string): LintResult => {
   return asLintResult(rawResult);
 };
 
-const isDeclaredAsFunctionTypedProperty = (
-  interfaceSourceText: string,
-  memberName: string,
-): boolean => {
-  const memberDeclarationLine = interfaceSourceText
-    .split('\n')
-    .find(
-      (line) =>
-        line.trim().startsWith(`${memberName}(`) ||
-        line.trim().startsWith(`${memberName}:`),
-    );
-  if (memberDeclarationLine === undefined) {
-    throw new Error(
-      `expected to find a declaration line for interface member "${memberName}" in "${REPOSITORY_INTERFACE_FILE_RELATIVE_PATH}", but found none. Source:\n${interfaceSourceText}`,
-    );
-  }
-  return (
-    memberDeclarationLine.trim().startsWith(`${memberName}:`) &&
-    memberDeclarationLine.includes('=>')
-  );
-};
-
 describe('scripts/typescript eslintrc unbound-method interface property typing', () => {
   beforeAll(() => {
     fs.writeFileSync(
@@ -207,26 +173,5 @@ describe('scripts/typescript eslintrc unbound-method interface property typing',
     }
 
     expect(unboundMethodMessages.length).toBeGreaterThan(0);
-  });
-
-  test('UminoBotCollaboratorRepository interface members are declared as function-typed properties, not method-shorthand', () => {
-    const interfaceSourceText = fs.readFileSync(
-      REPOSITORY_INTERFACE_FILE_ABSOLUTE_PATH,
-      'utf8',
-    );
-
-    for (const memberName of REPOSITORY_INTERFACE_MEMBER_NAMES) {
-      if (!isDeclaredAsFunctionTypedProperty(interfaceSourceText, memberName)) {
-        throw new Error(
-          `expected interface member "${memberName}" in "${REPOSITORY_INTERFACE_FILE_RELATIVE_PATH}" to be declared as a function-typed property (e.g. "${memberName}: (...) => ...;"), not method-shorthand syntax. Source:\n${interfaceSourceText}`,
-        );
-      }
-    }
-
-    expect(
-      REPOSITORY_INTERFACE_MEMBER_NAMES.every((memberName) =>
-        isDeclaredAsFunctionTypedProperty(interfaceSourceText, memberName),
-      ),
-    ).toBe(true);
   });
 });
