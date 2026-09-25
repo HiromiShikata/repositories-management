@@ -488,8 +488,6 @@ const expectedBranchProtectionPayload = {
   required_status_checks: {
     strict: false,
     contexts: [
-      'test',
-      'format',
       'commit-lint',
       'create_and_enable_automerge',
       'Check linked issues in pull requests',
@@ -593,8 +591,34 @@ const twoRepositories: RepositoryListEntry[] = [
   mainDefaultBranchRepository,
   masterDefaultBranchRepository,
 ];
-const requiredStatusCheckContexts =
-  expectedBranchProtectionPayload.required_status_checks.contexts;
+const liveBranchProtectionPayloadContexts = (): string[] => {
+  const match = /BRANCH_PROTECTION_PAYLOAD='([^']*)'/.exec(workflowContent);
+  if (match === null) {
+    throw new Error(
+      'the workflow declares no BRANCH_PROTECTION_PAYLOAD assignment',
+    );
+  }
+  const payload: unknown = JSON.parse(match[1]);
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    !('required_status_checks' in payload) ||
+    typeof payload.required_status_checks !== 'object' ||
+    payload.required_status_checks === null ||
+    !('contexts' in payload.required_status_checks) ||
+    !Array.isArray(payload.required_status_checks.contexts) ||
+    !payload.required_status_checks.contexts.every(
+      (context) => typeof context === 'string',
+    )
+  ) {
+    throw new Error(
+      'BRANCH_PROTECTION_PAYLOAD declares no required_status_checks.contexts string array',
+    );
+  }
+  return payload.required_status_checks.contexts;
+};
+
+const requiredStatusCheckContexts = liveBranchProtectionPayloadContexts();
 
 describe('repositories-management.yml workflow', () => {
   test('merge settings enforcement targets test-* repositories', () => {
@@ -1133,7 +1157,8 @@ const unprotectedRepository: RepositoryListEntry = {
   isFork: false,
   defaultBranchRef: { name: 'main' },
 };
-const contextsMissingFromOwnContinuousIntegration = ['test', 'format'];
+const contextsMissingFromOwnContinuousIntegration =
+  requiredStatusCheckContexts.slice(0, 2);
 const contextsReportedByEveryRepository = requiredStatusCheckContexts.filter(
   (context) => !contextsMissingFromOwnContinuousIntegration.includes(context),
 );
@@ -1608,5 +1633,71 @@ describe('update-repos FILES_TO_SYNC', () => {
     );
     const prettierIgnoreContent = fs.readFileSync(prettierIgnorePath, 'utf8');
     expect(prettierIgnoreContent).toContain('*.sh');
+  });
+});
+
+const legacyWorkflowFileRemovalScript = (): string => {
+  const stepBlock = extractStepBlock(syncStepName);
+  const start = stepBlock.indexOf(
+    'FILE=".github/workflows/assign-all-cards-to-owner.yml"',
+  );
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = stepBlock.indexOf('\n            cd $REPO', start);
+  expect(end).toBeGreaterThan(start);
+  return stepBlock
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.replace(/^ {12}/, ''))
+    .join('\n');
+};
+
+const remainsAfterLegacyWorkflowFileRemoval = (
+  syncedRepositoryRelativeFilePath: string,
+): boolean => {
+  const sandbox = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'repositories-management-legacy-file-removal-'),
+  );
+  const clonedRepositoryDirectory = path.join(sandbox, 'example-repo');
+  const targetFilePath = path.join(
+    clonedRepositoryDirectory,
+    syncedRepositoryRelativeFilePath,
+  );
+  fs.mkdirSync(path.dirname(targetFilePath), { recursive: true });
+  fs.writeFileSync(targetFilePath, 'placeholder content');
+
+  const script = [
+    'set -e',
+    `REPO=${clonedRepositoryDirectory}`,
+    legacyWorkflowFileRemovalScript(),
+  ].join('\n');
+  const outcome = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+  expect(outcome.status).toBe(0);
+
+  return fs.existsSync(targetFilePath);
+};
+
+describe('update-repos legacy workflow file removal', () => {
+  test('removes the retired assign-all-cards-to-owner.yml workflow file from every synced repository', () => {
+    expect(
+      remainsAfterLegacyWorkflowFileRemoval(
+        '.github/workflows/assign-all-cards-to-owner.yml',
+      ),
+    ).toBe(false);
+  });
+
+  test('removes the retired assign-all-card-to-owner.yml workflow file from every synced repository', () => {
+    expect(
+      remainsAfterLegacyWorkflowFileRemoval(
+        '.github/workflows/assign-all-card-to-owner.yml',
+      ),
+    ).toBe(false);
+  });
+
+  test('removes the retired empty-format-test-job.yml workflow file from every synced repository', () => {
+    expect(
+      remainsAfterLegacyWorkflowFileRemoval(
+        '.github/workflows/empty-format-test-job.yml',
+      ),
+    ).toBe(false);
   });
 });
