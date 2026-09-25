@@ -18,8 +18,7 @@ interface FakeAddCollaboratorOptions {
 }
 
 type FakeAddCollaboratorResponse =
-  | { status: 201; data: { id: number } }
-  | { status: 204 };
+  { status: 201; data: { id: number } } | { status: 204 };
 
 interface FakeAcceptInvitationOptions {
   invitation_id: number;
@@ -111,17 +110,17 @@ describe('OctokitUminoBotCollaboratorRepository', () => {
   test('constructor throws GH_TOKEN error when GH_TOKEN is not set', () => {
     delete process.env.GH_TOKEN;
 
-    expect(() => new OctokitUminoBotCollaboratorRepository('test-owner')).toThrow(
-      'GH_TOKEN environment variable is not set',
-    );
+    expect(
+      () => new OctokitUminoBotCollaboratorRepository('test-owner'),
+    ).toThrow('GH_TOKEN environment variable is not set');
   });
 
   test('constructor throws UMINO_BOT_TOKEN error when UMINO_BOT_TOKEN is not set', () => {
     delete process.env.UMINO_BOT_TOKEN;
 
-    expect(() => new OctokitUminoBotCollaboratorRepository('test-owner')).toThrow(
-      'UMINO_BOT_TOKEN environment variable is not set',
-    );
+    expect(
+      () => new OctokitUminoBotCollaboratorRepository('test-owner'),
+    ).toThrow('UMINO_BOT_TOKEN environment variable is not set');
   });
 
   test('listNonArchivedRepositoryNames returns only non-archived repository names', async () => {
@@ -133,9 +132,7 @@ describe('OctokitUminoBotCollaboratorRepository', () => {
     ]);
     configureOctokitConstructor(ownerOctokit, createFakeOctokitInstance());
 
-    const repository = new OctokitUminoBotCollaboratorRepository(
-      'test-owner',
-    );
+    const repository = new OctokitUminoBotCollaboratorRepository('test-owner');
     const names = await repository.listNonArchivedRepositoryNames();
 
     expect(names).toEqual(['repo-active-1', 'repo-active-2']);
@@ -149,9 +146,7 @@ describe('OctokitUminoBotCollaboratorRepository', () => {
     });
     configureOctokitConstructor(ownerOctokit, createFakeOctokitInstance());
 
-    const repository = new OctokitUminoBotCollaboratorRepository(
-      'test-owner',
-    );
+    const repository = new OctokitUminoBotCollaboratorRepository('test-owner');
     const result = await repository.inviteAsWriteCollaborator('some-repo');
 
     expect(result).toEqual({ kind: 'invited', invitationId: 777 });
@@ -164,9 +159,7 @@ describe('OctokitUminoBotCollaboratorRepository', () => {
     });
     configureOctokitConstructor(ownerOctokit, createFakeOctokitInstance());
 
-    const repository = new OctokitUminoBotCollaboratorRepository(
-      'test-owner',
-    );
+    const repository = new OctokitUminoBotCollaboratorRepository('test-owner');
     const result = await repository.inviteAsWriteCollaborator('some-repo');
 
     expect(result).toEqual({ kind: 'alreadyCollaborator' });
@@ -179,9 +172,7 @@ describe('OctokitUminoBotCollaboratorRepository', () => {
     );
     configureOctokitConstructor(createFakeOctokitInstance(), botOctokit);
 
-    const repository = new OctokitUminoBotCollaboratorRepository(
-      'test-owner',
-    );
+    const repository = new OctokitUminoBotCollaboratorRepository('test-owner');
     await repository.acceptInvitation(999);
 
     expect(
