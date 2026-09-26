@@ -1,2 +1,2 @@
 #!/usr/bin/env sh
-cd scripts/typescript && npm run lint && npx tsc --noEmit -p tsconfig.json && npm test
+cd scripts/typescript && npm run lint && npx tsc --noEmit -p tsconfig.json && PRE_PUSH_HOOK_RUNNING=1 npm test
