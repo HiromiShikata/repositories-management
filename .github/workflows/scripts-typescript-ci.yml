@@ -38,3 +38,5 @@ jobs:
       - name: Test (changed since base)
         run: npx jest --changedSince=origin/${{ github.event.pull_request.base.ref }}
         working-directory: scripts/typescript
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

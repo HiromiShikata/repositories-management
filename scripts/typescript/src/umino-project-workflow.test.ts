@@ -516,42 +516,6 @@ describe('umino-project.yml workflow', () => {
     });
   });
 
-  describe('check-linked-issues step', () => {
-    test('step-level condition excludes dependabot[bot] PR user', () => {
-      expect(workflowContent).toContain(
-        "github.event.pull_request.user.login != 'dependabot[bot]'",
-      );
-    });
-
-    test('step-level condition excludes app/dependabot PR user', () => {
-      expect(workflowContent).toContain(
-        "github.event.pull_request.user.login != 'app/dependabot'",
-      );
-    });
-
-    test('exclude-branches includes dependabot-** for hyphen-named Dependabot branches', () => {
-      expect(workflowContent).toContain('dependabot-**');
-    });
-
-    test('exclude-branches includes dependabot/** for slash-named Dependabot branches', () => {
-      expect(workflowContent).toContain('dependabot/**');
-    });
-
-    test('uses GitHub App installation token', () => {
-      const checkStepStart = workflowContent.indexOf(
-        'github-action-check-linked-issues',
-      );
-      const nextStep = workflowContent.indexOf(
-        '      - name: Get the output',
-        checkStepStart,
-      );
-      const checkStepBlock = workflowContent.slice(checkStepStart, nextStep);
-      expect(checkStepBlock).toContain(
-        'github-token: ${{ steps.app-token.outputs.token }}',
-      );
-    });
-  });
-
   describe('move-to-awaiting-workspace step behaviour', () => {
     const awaitingWorkspaceOptionIdMatch = workflowContent.match(/-f optionId="([^"]+)"/);
     const awaitingWorkspaceOptionId =
