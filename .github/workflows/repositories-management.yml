@@ -54,6 +54,7 @@ jobs:
             ".github/workflows/commit-lint.yml"
             ".github/workflows/configs/commitlint.config.cjs"
             "scripts/reject-bare-issue-number-references.sh"
+            "scripts/check-pull-request-linked-issues-runner.sh"
             ".github/workflows/create-pr.yml"
             "scripts/enable-auto-merge-error-handler.sh"
             ".github/workflows/api-created_issue_pr.yml"

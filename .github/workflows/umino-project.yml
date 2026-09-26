@@ -211,10 +211,7 @@ jobs:
         if: >-
           github.event.pull_request.user.login != 'dependabot[bot]' &&
           github.event.pull_request.user.login != 'app/dependabot'
-        run: |
-          cd scripts/typescript
-          npm ci
-          npx tsx src/adapter/entry-points/cli/check-pull-request-linked-issues.ts
+        run: bash scripts/check-pull-request-linked-issues-runner.sh
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ACCOUNT_OWNER: HiromiShikata
