@@ -1,4 +1,4 @@
-import { spawnSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -47,14 +47,14 @@ const runRunnerScript = (
   };
 };
 
-describe('check-pull-request-linked-issues-runner.sh', () => {
-  afterEach(() => {
-    for (const sandbox of sandboxDirectoriesPendingCleanup) {
-      fs.rmSync(sandbox, { recursive: true, force: true });
-    }
-    sandboxDirectoriesPendingCleanup.length = 0;
-  });
+afterEach(() => {
+  for (const sandbox of sandboxDirectoriesPendingCleanup) {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  }
+  sandboxDirectoriesPendingCleanup.length = 0;
+});
 
+describe('check-pull-request-linked-issues-runner.sh', () => {
   test('runs the local CLI directly when scripts/typescript already carries it, without cloning anything', () => {
     const cwd = makeSandboxDir('linked-issues-runner-local-');
     const runnerTemp = makeSandboxDir('linked-issues-runner-temp-');
@@ -136,5 +136,38 @@ describe('check-pull-request-linked-issues-runner.sh', () => {
     );
     expect(log).toContain(`npm ci cwd=${clonedScriptDir}`);
     expect(log).toContain(`npx tsx ${CLI_RELATIVE_PATH} cwd=${clonedScriptDir}`);
+  });
+});
+
+describe('check-pull-request-linked-issues-runner.sh clone fallback against the real GitHub API', () => {
+  test('gh repo clone HiromiShikata/repositories-management retrieves the exact CLI this runner falls back to, from the ref this test itself runs on', () => {
+    const ref =
+      process.env.GITHUB_HEAD_REF ||
+      execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+        encoding: 'utf8',
+      }).trim();
+    const cloneDir = makeSandboxDir('linked-issues-runner-live-clone-');
+
+    const result = spawnSync(
+      'gh',
+      [
+        'repo',
+        'clone',
+        'HiromiShikata/repositories-management',
+        cloneDir,
+        '--',
+        '--depth',
+        '1',
+        '--quiet',
+        '--branch',
+        ref,
+      ],
+      { encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(0);
+    expect(
+      fs.existsSync(path.join(cloneDir, 'scripts/typescript', CLI_RELATIVE_PATH)),
+    ).toBe(true);
   });
 });
