@@ -1646,13 +1646,28 @@ const LEGACY_REMOVAL_SCRIPT_PATH = path.join(
   'scripts/remove-legacy-workflow-files.sh',
 );
 
+const EMPTY_FORMAT_TEST_JOB_RETIRED_PLACEHOLDER_CONTENT =
+  'name: Empty format test\n' +
+  '\n' +
+  'on: push\n' +
+  '\n' +
+  'jobs:\n' +
+  '  format:\n' +
+  '    runs-on: ubuntu-latest\n' +
+  '    steps:\n' +
+  '      - run: echo "format"\n' +
+  '  test:\n' +
+  '    runs-on: ubuntu-latest\n' +
+  '    steps:\n' +
+  '      - run: echo "test"\n';
+
 const sandboxDirectoriesPendingCleanup: string[] = [];
 const sandboxDirectoriesEverCreated: string[] = [];
 
-const remainsAfterLegacyWorkflowFileRemoval = (
+const runLegacyWorkflowFileRemovalScript = (
   syncedRepositoryRelativeFilePath: string,
-  shouldSeedFileBeforeRemoval = true,
-): boolean => {
+  seedFileContent: string | undefined,
+): string => {
   const sandbox = fs.mkdtempSync(
     path.join(os.tmpdir(), 'repositories-management-legacy-file-removal-'),
   );
@@ -1663,9 +1678,9 @@ const remainsAfterLegacyWorkflowFileRemoval = (
     clonedRepositoryDirectory,
     syncedRepositoryRelativeFilePath,
   );
-  if (shouldSeedFileBeforeRemoval) {
+  if (seedFileContent !== undefined) {
     fs.mkdirSync(path.dirname(targetFilePath), { recursive: true });
-    fs.writeFileSync(targetFilePath, 'placeholder content');
+    fs.writeFileSync(targetFilePath, seedFileContent);
   } else {
     fs.mkdirSync(clonedRepositoryDirectory, { recursive: true });
   }
@@ -1677,7 +1692,32 @@ const remainsAfterLegacyWorkflowFileRemoval = (
   );
   expect(outcome.status).toBe(0);
 
-  return fs.existsSync(targetFilePath);
+  return targetFilePath;
+};
+
+const remainsAfterLegacyWorkflowFileRemoval = (
+  syncedRepositoryRelativeFilePath: string,
+  shouldSeedFileBeforeRemoval = true,
+  seedFileContent = 'placeholder content',
+): boolean =>
+  fs.existsSync(
+    runLegacyWorkflowFileRemovalScript(
+      syncedRepositoryRelativeFilePath,
+      shouldSeedFileBeforeRemoval ? seedFileContent : undefined,
+    ),
+  );
+
+const contentAfterLegacyWorkflowFileRemoval = (
+  syncedRepositoryRelativeFilePath: string,
+  seedFileContent: string,
+): string | undefined => {
+  const targetFilePath = runLegacyWorkflowFileRemovalScript(
+    syncedRepositoryRelativeFilePath,
+    seedFileContent,
+  );
+  return fs.existsSync(targetFilePath)
+    ? fs.readFileSync(targetFilePath, 'utf8')
+    : undefined;
 };
 
 describe('update-repos legacy workflow file removal', () => {
@@ -1704,12 +1744,30 @@ describe('update-repos legacy workflow file removal', () => {
     ).toBe(false);
   });
 
-  test('removes the retired empty-format-test-job.yml workflow file from every synced repository', () => {
+  test('removes the retired empty-format-test-job.yml workflow file when its content exactly matches the retired placeholder', () => {
     expect(
       remainsAfterLegacyWorkflowFileRemoval(
         '.github/workflows/empty-format-test-job.yml',
+        true,
+        EMPTY_FORMAT_TEST_JOB_RETIRED_PLACEHOLDER_CONTENT,
       ),
     ).toBe(false);
+  });
+
+  test('leaves empty-format-test-job.yml byte-for-byte unchanged when its content does not exactly match the retired placeholder', () => {
+    const seedFileContent =
+      EMPTY_FORMAT_TEST_JOB_RETIRED_PLACEHOLDER_CONTENT +
+      '  statusline-test:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - run: echo "statusline-test"\n';
+
+    expect(
+      contentAfterLegacyWorkflowFileRemoval(
+        '.github/workflows/empty-format-test-job.yml',
+        seedFileContent,
+      ),
+    ).toBe(seedFileContent);
   });
 
   test.each([
