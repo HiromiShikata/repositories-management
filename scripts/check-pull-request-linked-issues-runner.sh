@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# The check_pull_requests_to_link_issues job in umino-project.yml runs this script.
-# That workflow file is distributed to every repository via FILES_TO_SYNC, but the
-# TypeScript sources under scripts/typescript/src are not, so a repository other than
-# HiromiShikata/repositories-management has no local copy of the CLI this script runs.
-# When the local copy is absent, this script fetches the canonical one instead.
 SCRIPT_RELATIVE_PATH=src/adapter/entry-points/cli/check-pull-request-linked-issues.ts
 
 if [ -f "scripts/typescript/$SCRIPT_RELATIVE_PATH" ]; then
