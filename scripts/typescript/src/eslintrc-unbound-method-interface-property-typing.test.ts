@@ -1,7 +1,10 @@
 import { spawnSync } from 'child_process';
-import * as crypto from 'crypto';
-import * as fs from 'fs';
 import * as path from 'path';
+import {
+  createLintRuleViolationFixtureFile,
+  LINT_FIXTURE_TSCONFIG_RELATIVE_PATH,
+  LintRuleViolationFixtureFile,
+} from './lintRuleViolationFixture';
 
 const SCRIPTS_TYPESCRIPT_DIR = path.join(__dirname, '..');
 const ESLINT_BINARY_PATH = path.join(
@@ -16,11 +19,6 @@ const UNBOUND_METHOD_RULE_ID = '@typescript-eslint/unbound-method';
 const PREVIOUSLY_FAILING_FILE_RELATIVE_PATH =
   'src/domain/usecases/UminoBotCollaboratorInviteUseCase.test.ts';
 
-const UNBOUND_METHOD_FIXTURE_RELATIVE_PATH = `src/unbound-method-regression-guard-fixture-${crypto.randomUUID()}.ts`;
-const UNBOUND_METHOD_FIXTURE_ABSOLUTE_PATH = path.join(
-  SCRIPTS_TYPESCRIPT_DIR,
-  UNBOUND_METHOD_FIXTURE_RELATIVE_PATH,
-);
 const UNBOUND_METHOD_FIXTURE_SOURCE = [
   '// Regression guard fixture: a genuine method-shorthand interface member',
   '// referenced as a bare value MUST still be flagged by the real, unmodified',
@@ -103,10 +101,13 @@ const asLintResult = (value: unknown): LintResult => {
   );
 };
 
-const runRealEslintOnFile = (fileRelativePath: string): LintResult => {
+const runRealEslintOnFile = (
+  fileRelativePath: string,
+  additionalCliArgs: string[] = [],
+): LintResult => {
   const outcome = spawnSync(
     ESLINT_BINARY_PATH,
-    [fileRelativePath, '--format', 'json'],
+    [fileRelativePath, '--format', 'json', ...additionalCliArgs],
     { cwd: SCRIPTS_TYPESCRIPT_DIR, encoding: 'utf8' },
   );
   if (outcome.error) {
@@ -130,16 +131,16 @@ const runRealEslintOnFile = (fileRelativePath: string): LintResult => {
 };
 
 describe('scripts/typescript eslintrc unbound-method interface property typing', () => {
+  let fixtureFile: LintRuleViolationFixtureFile;
+
   beforeAll(() => {
-    fs.writeFileSync(
-      UNBOUND_METHOD_FIXTURE_ABSOLUTE_PATH,
+    fixtureFile = createLintRuleViolationFixtureFile(
       UNBOUND_METHOD_FIXTURE_SOURCE,
-      'utf8',
     );
   });
 
   afterAll(() => {
-    fs.rmSync(UNBOUND_METHOD_FIXTURE_ABSOLUTE_PATH, { force: true });
+    fixtureFile.cleanup();
   });
 
   test('linting the previously-failing UminoBotCollaboratorInviteUseCase test file produces zero errors and zero unbound-method messages', () => {
@@ -160,7 +161,10 @@ describe('scripts/typescript eslintrc unbound-method interface property typing',
   });
 
   test('a genuine method-shorthand unbound-method reference is still flagged by the real, unmodified .eslintrc.cjs', () => {
-    const result = runRealEslintOnFile(UNBOUND_METHOD_FIXTURE_RELATIVE_PATH);
+    const result = runRealEslintOnFile(
+      fixtureFile.relativeFilePathFromScriptsTypescriptDirectory,
+      [`--parser-options=project:${LINT_FIXTURE_TSCONFIG_RELATIVE_PATH}`],
+    );
 
     const unboundMethodMessages = result.messages.filter(
       (message) => message.ruleId === UNBOUND_METHOD_RULE_ID,
