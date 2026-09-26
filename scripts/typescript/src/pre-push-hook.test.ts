@@ -19,17 +19,8 @@ const SCRATCH_FILE_PATH = path.join(
 const SCRATCH_FILE_CONTENT =
   "export const prePushHookTestScratchTypeError: number = 'this literal is not assignable to number, so tsc --noEmit must fail';\n";
 
-// The hook's own chain is "cd scripts/typescript && npm run lint && npx tsc
-// --noEmit -p tsconfig.json && npm test", and "npm test" (plain "jest", no
-// --changedSince scoping) runs the entire suite, including this very test
-// file. Running the hook for real from inside this test would therefore
-// re-enter this same test, which would spawn the hook again, unbounded.
-// The hook script itself sets this env var immediately before its own
-// "npm test" step (a production fix, not a test-side one, so it also
-// guards a real "git push"), and this test only ever reads it — it MUST
-// NOT set it itself, since that would only guard this test's own
-// invocation and not a real push.
-const PRE_PUSH_HOOK_RUNNING_ENV_VAR_NAME = 'PRE_PUSH_HOOK_RUNNING';
+const PRE_PUSH_HOOK_SETS_BUT_THIS_TEST_ONLY_READS_ENV_VAR_NAME =
+  'PRE_PUSH_HOOK_RUNNING';
 
 interface ShellRunOutcome {
   exitCode: number | null;
@@ -116,7 +107,10 @@ describe('scripts/typescript/.husky/pre-push hook', () => {
   });
 
   test('exits 0 when npm run lint, tsc --noEmit and npm test all currently pass for real', () => {
-    if (process.env[PRE_PUSH_HOOK_RUNNING_ENV_VAR_NAME] === '1') {
+    if (
+      process.env[PRE_PUSH_HOOK_SETS_BUT_THIS_TEST_ONLY_READS_ENV_VAR_NAME] ===
+      '1'
+    ) {
       return;
     }
 

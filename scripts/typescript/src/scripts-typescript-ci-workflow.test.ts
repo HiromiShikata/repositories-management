@@ -266,15 +266,7 @@ describe('scripts-typescript-ci.yml pull request CI workflow', () => {
   });
 
   describe('test step', () => {
-    // The literal command this test executes is "npx jest
-    // --changedSince=origin/main", run from a test file that is itself part
-    // of any diff modifying this file. --changedSince self-selects a
-    // changed test file as related to itself, so the real invocation below
-    // re-runs this entire file, including this exact test, which would
-    // otherwise spawn the same command again, unbounded. This guard env var
-    // is set only on that one real invocation, so a nested run of this same
-    // test short-circuits instead of spawning a second time.
-    const TEST_STEP_RECURSION_GUARD_ENV_VAR_NAME =
+    const TEST_STEP_SELF_INVOCATION_RECURSION_GUARD_ENV_VAR_NAME =
       'SCRIPTS_TYPESCRIPT_CI_WORKFLOW_TEST_STEP_GUARD';
 
     test('the extracted test step command, with its base-ref template expression resolved to "main", scopes execution with a --changedSince flag and exits 0 against the current repository state', () => {
@@ -288,7 +280,11 @@ describe('scripts-typescript-ci.yml pull request CI workflow', () => {
         );
       }
 
-      if (process.env[TEST_STEP_RECURSION_GUARD_ENV_VAR_NAME] === '1') {
+      if (
+        process.env[
+          TEST_STEP_SELF_INVOCATION_RECURSION_GUARD_ENV_VAR_NAME
+        ] === '1'
+      ) {
         return;
       }
 
@@ -305,7 +301,7 @@ describe('scripts-typescript-ci.yml pull request CI workflow', () => {
       );
 
       const outcome = runShellCommand(resolvedRunCommand, SCRIPTS_TYPESCRIPT_DIR, {
-        [TEST_STEP_RECURSION_GUARD_ENV_VAR_NAME]: '1',
+        [TEST_STEP_SELF_INVOCATION_RECURSION_GUARD_ENV_VAR_NAME]: '1',
       });
       if (outcome.exitCode !== 0) {
         throw new Error(
