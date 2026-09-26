@@ -215,3 +215,20 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ACCOUNT_OWNER: HiromiShikata
+
+  debug_verify_app_token_read_access:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.number == 638
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
+          private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
+          owner: HiromiShikata
+      - run: gh api repos/HiromiShikata/repositories-management --jq .full_name
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+      - run: git ls-remote https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/HiromiShikata/repositories-management.git HEAD
