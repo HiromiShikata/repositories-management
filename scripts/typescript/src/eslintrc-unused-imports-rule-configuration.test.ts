@@ -1,7 +1,10 @@
 import { spawnSync } from 'child_process';
-import * as crypto from 'crypto';
-import * as fs from 'fs';
 import * as path from 'path';
+import {
+  createLintRuleViolationFixtureFile,
+  LINT_FIXTURE_TSCONFIG_RELATIVE_PATH,
+  LintRuleViolationFixtureFile,
+} from './lintRuleViolationFixture';
 
 const SCRIPTS_TYPESCRIPT_DIR = path.join(__dirname, '..');
 const ESLINT_BINARY_PATH = path.join(
@@ -9,11 +12,6 @@ const ESLINT_BINARY_PATH = path.join(
   'node_modules',
   '.bin',
   'eslint',
-);
-const FIXTURE_RELATIVE_PATH = `src/unused-imports-eslint-fixture-${crypto.randomUUID()}.ts`;
-const FIXTURE_ABSOLUTE_PATH = path.join(
-  SCRIPTS_TYPESCRIPT_DIR,
-  FIXTURE_RELATIVE_PATH,
 );
 const FIXTURE_SOURCE = [
   "import { readFileSync } from 'fs';",
@@ -84,10 +82,19 @@ const asLintResult = (value: unknown): LintResult => {
   );
 };
 
+let fixtureFile: LintRuleViolationFixtureFile;
+
 const runRealEslintOnFixture = (): LintResult => {
+  const fixtureRelativePath =
+    fixtureFile.relativeFilePathFromScriptsTypescriptDirectory;
   const outcome = spawnSync(
     ESLINT_BINARY_PATH,
-    [FIXTURE_RELATIVE_PATH, '--format', 'json'],
+    [
+      fixtureRelativePath,
+      '--format',
+      'json',
+      `--parser-options=project:${LINT_FIXTURE_TSCONFIG_RELATIVE_PATH}`,
+    ],
     { cwd: SCRIPTS_TYPESCRIPT_DIR, encoding: 'utf8' },
   );
   if (outcome.error) {
@@ -104,7 +111,7 @@ const runRealEslintOnFixture = (): LintResult => {
   const [rawResult] = results;
   if (rawResult === undefined) {
     throw new Error(
-      `expected eslint --format json to report exactly one file result for "${FIXTURE_RELATIVE_PATH}", got ${results.length} results: ${outcome.stdout}`,
+      `expected eslint --format json to report exactly one file result for "${fixtureRelativePath}", got ${results.length} results: ${outcome.stdout}`,
     );
   }
   return asLintResult(rawResult);
@@ -113,7 +120,11 @@ const runRealEslintOnFixture = (): LintResult => {
 const readRealResolvedConfigRuleIds = (): string[] => {
   const outcome = spawnSync(
     ESLINT_BINARY_PATH,
-    ['--print-config', FIXTURE_RELATIVE_PATH],
+    [
+      '--print-config',
+      fixtureFile.relativeFilePathFromScriptsTypescriptDirectory,
+      `--parser-options=project:${LINT_FIXTURE_TSCONFIG_RELATIVE_PATH}`,
+    ],
     { cwd: SCRIPTS_TYPESCRIPT_DIR, encoding: 'utf8' },
   );
   if (outcome.error || outcome.status !== 0) {
@@ -156,11 +167,11 @@ const readInstalledUnusedImportsPluginRuleNames = (): string[] => {
 
 describe('scripts/typescript eslintrc unused-imports rule configuration', () => {
   beforeAll(() => {
-    fs.writeFileSync(FIXTURE_ABSOLUTE_PATH, FIXTURE_SOURCE, 'utf8');
+    fixtureFile = createLintRuleViolationFixtureFile(FIXTURE_SOURCE);
   });
 
   afterAll(() => {
-    fs.rmSync(FIXTURE_ABSOLUTE_PATH, { force: true });
+    fixtureFile.cleanup();
   });
 
   test('linting a fixture with an unused import produces no fatal or rule-not-found configuration error', () => {
