@@ -26,12 +26,15 @@ const runRejectScript = (
       env.PR_TITLE = prTitle;
     }
 
-    const result = spawnSync(
-      'bash',
-      [REJECT_SCRIPT, commitSubjectsFilePath],
-      { encoding: 'utf8', env },
-    );
-    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+    const result = spawnSync('bash', [REJECT_SCRIPT, commitSubjectsFilePath], {
+      encoding: 'utf8',
+      env,
+    });
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
   } finally {
     fs.rmSync(sandbox, { recursive: true, force: true });
   }
@@ -61,9 +64,7 @@ describe('reject-bare-issue-number-references', () => {
     {
       name: 'a bare issue-number shorthand in a commit subject is rejected',
       prTitle: 'fix: correct typo',
-      commitSubjects: [
-        'test: add regression test for typing fix (#616)',
-      ],
+      commitSubjects: ['test: add regression test for typing fix (#616)'],
       expectedStatus: 1,
       expectedStderrContains: [
         'Bare issue-number shorthand in commit subject:',
