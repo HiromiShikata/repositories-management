@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+cd scripts/typescript && npm run lint && npx tsc --noEmit -p tsconfig.json && npm test
