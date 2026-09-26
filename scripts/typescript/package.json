@@ -13,7 +13,7 @@
     "fmt": "npm run prettier && npm run lint-fix",
     "build": "tsc -p ./tsconfig.build.json",
     "test": "jest",
-    "prepare": "git config --worktree core.hooksPath scripts/typescript/.husky"
+    "prepare": "git config extensions.worktreeConfig true && git config --worktree core.hooksPath scripts/typescript/.husky"
   },
   "repository": {
     "type": "git",
