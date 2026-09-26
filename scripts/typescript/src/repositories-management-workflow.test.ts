@@ -1626,6 +1626,13 @@ describe('update-repos FILES_TO_SYNC', () => {
     expect(stepBlock).toContain('".prettierignore"');
   });
 
+  test('reject-bare-issue-number-references.sh is listed in FILES_TO_SYNC', () => {
+    const stepBlock = extractStepBlock(syncStepName);
+    expect(stepBlock).toContain(
+      '"scripts/reject-bare-issue-number-references.sh"',
+    );
+  });
+
   test('the synced .prettierignore excludes shell scripts', () => {
     const prettierIgnorePath = path.join(
       __dirname,
