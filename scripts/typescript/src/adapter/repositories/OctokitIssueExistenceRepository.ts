@@ -1,5 +1,3 @@
-import { Octokit } from '@octokit/rest';
-
 import { IssueExistenceRepository } from '../../domain/usecases/adapter-interfaces/IssueExistenceRepository';
 
 const isNotFoundError = (error: unknown): boolean => {
@@ -12,10 +10,22 @@ const isNotFoundError = (error: unknown): boolean => {
   return error.status === 404;
 };
 
+export interface IssueExistenceOctokitClient {
+  rest: {
+    issues: {
+      get(params: {
+        owner: string;
+        repo: string;
+        issue_number: number;
+      }): Promise<unknown>;
+    };
+  };
+}
+
 export class OctokitIssueExistenceRepository
   implements IssueExistenceRepository
 {
-  constructor(private readonly octokit: Octokit) {}
+  constructor(private readonly octokit: IssueExistenceOctokitClient) {}
 
   async issueExists(
     owner: string,

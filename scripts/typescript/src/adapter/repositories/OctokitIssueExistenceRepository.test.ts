@@ -1,6 +1,7 @@
-import { Octokit } from '@octokit/rest';
-
-import { OctokitIssueExistenceRepository } from './OctokitIssueExistenceRepository';
+import {
+  IssueExistenceOctokitClient,
+  OctokitIssueExistenceRepository,
+} from './OctokitIssueExistenceRepository';
 
 type FakeIssuesGetParams = {
   owner: string;
@@ -10,10 +11,9 @@ type FakeIssuesGetParams = {
 
 type FakeIssuesGet = (params: FakeIssuesGetParams) => Promise<unknown>;
 
-const createFakeOctokit = (issuesGet: FakeIssuesGet): Octokit => {
-  const fakeOctokit = { rest: { issues: { get: issuesGet } } };
-  return fakeOctokit as unknown as Octokit;
-};
+const createFakeOctokit = (
+  issuesGet: FakeIssuesGet,
+): IssueExistenceOctokitClient => ({ rest: { issues: { get: issuesGet } } });
 
 describe('OctokitIssueExistenceRepository', () => {
   test('resolves true when the underlying call succeeds', async () => {
@@ -29,7 +29,7 @@ describe('OctokitIssueExistenceRepository', () => {
   test('resolves false when the underlying call throws an object with status 404', async () => {
     const repository = new OctokitIssueExistenceRepository(
       createFakeOctokit(async () => {
-        throw { status: 404, message: 'Not Found' };
+        throw Object.assign(new Error('Not Found'), { status: 404 });
       }),
     );
 
@@ -41,13 +41,15 @@ describe('OctokitIssueExistenceRepository', () => {
   test('rethrows when the underlying call throws an object with a non-404 status', async () => {
     const repository = new OctokitIssueExistenceRepository(
       createFakeOctokit(async () => {
-        throw { status: 500, message: 'Internal Server Error' };
+        throw Object.assign(new Error('Internal Server Error'), {
+          status: 500,
+        });
       }),
     );
 
     await expect(
       repository.issueExists('owner-a', 'repo-a', 1),
-    ).rejects.toEqual({ status: 500, message: 'Internal Server Error' });
+    ).rejects.toMatchObject({ status: 500, message: 'Internal Server Error' });
   });
 
   test('rethrows when the underlying call throws a plain Error with no status property', async () => {
