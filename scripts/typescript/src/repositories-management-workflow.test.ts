@@ -1620,6 +1620,34 @@ describe('update-repos sync pull request creation and approval', () => {
   });
 });
 
+const filesToSyncArrayDeclarationScript = (): string => {
+  const stepBlock = extractStepBlock(syncStepName);
+  const start = stepBlock.indexOf('FILES_TO_SYNC=(');
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = stepBlock.indexOf('\n          for REPO in', start);
+  expect(end).toBeGreaterThan(start);
+  return stepBlock
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.replace(/^ {10}/, ''))
+    .join('\n');
+};
+
+const runFilesToSyncArrayDeclaration = (): {
+  status: number;
+  stdout: string;
+} => {
+  const script = [
+    filesToSyncArrayDeclarationScript(),
+    'printf \'%s\\n\' "${FILES_TO_SYNC[@]}"',
+  ].join('\n');
+  const outcome = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+  return {
+    status: outcome.status === null ? -1 : outcome.status,
+    stdout: outcome.stdout,
+  };
+};
+
 describe('update-repos FILES_TO_SYNC', () => {
   test('.prettierignore is listed in FILES_TO_SYNC', () => {
     const stepBlock = extractStepBlock(syncStepName);
@@ -1627,9 +1655,11 @@ describe('update-repos FILES_TO_SYNC', () => {
   });
 
   test('reject-bare-issue-number-references.sh is listed in FILES_TO_SYNC', () => {
-    const stepBlock = extractStepBlock(syncStepName);
-    expect(stepBlock).toContain(
-      '"scripts/reject-bare-issue-number-references.sh"',
+    const { status, stdout } = runFilesToSyncArrayDeclaration();
+    expect(status).toBe(0);
+    const syncedFilePaths = stdout.split('\n').filter((line) => line !== '');
+    expect(syncedFilePaths).toContain(
+      'scripts/reject-bare-issue-number-references.sh',
     );
   });
 
