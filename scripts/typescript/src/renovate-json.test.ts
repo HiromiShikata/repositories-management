@@ -21,6 +21,23 @@ const readPlatformAutomerge = (filePath: string): unknown => {
   return undefined;
 };
 
+const readVulnerabilityAlerts = (filePath: string): unknown => {
+  const raw = fs
+    .readFileSync(filePath, 'utf8')
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('//'))
+    .join('\n');
+  const parsed: unknown = JSON.parse(raw);
+  if (
+    parsed !== null &&
+    typeof parsed === 'object' &&
+    'vulnerabilityAlerts' in parsed
+  ) {
+    return parsed.vulnerabilityAlerts;
+  }
+  return undefined;
+};
+
 const readPackageRules = (filePath: string): unknown[] => {
   const raw = fs
     .readFileSync(filePath, 'utf8')
@@ -46,6 +63,12 @@ describe('renovate.json security settings', () => {
 
   test('scripts/typescript renovate.json sets platformAutomerge to false', () => {
     expect(readPlatformAutomerge(typescriptRenovatePath)).toBe(false);
+  });
+
+  test('root renovate.json keeps vulnerability alerts enabled despite the npm overrides packageRules exclusion', () => {
+    expect(readVulnerabilityAlerts(rootRenovatePath)).toEqual({
+      enabled: true,
+    });
   });
 });
 
