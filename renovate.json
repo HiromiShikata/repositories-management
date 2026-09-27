@@ -16,6 +16,7 @@
   "branchConcurrentLimit": 2,
   "ignorePaths": ["**/generated/*", "**/_gen/*"],
   "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": { "enabled": true },
   "packageRules": [
     {
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
