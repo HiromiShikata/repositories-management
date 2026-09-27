@@ -41,6 +41,10 @@
     {
       "matchPackageNames": ["@google/clasp"],
       "allowedVersions": "3.1.0"
+    },
+    {
+      "matchDepTypes": ["overrides"],
+      "enabled": false
     }
   ]
 }
