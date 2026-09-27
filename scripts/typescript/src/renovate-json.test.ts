@@ -11,7 +11,11 @@ const readPlatformAutomerge = (filePath: string): unknown => {
     .filter((line) => !line.trimStart().startsWith('//'))
     .join('\n');
   const parsed: unknown = JSON.parse(raw);
-  if (parsed !== null && typeof parsed === 'object' && 'platformAutomerge' in parsed) {
+  if (
+    parsed !== null &&
+    typeof parsed === 'object' &&
+    'platformAutomerge' in parsed
+  ) {
     return parsed.platformAutomerge;
   }
   return undefined;
