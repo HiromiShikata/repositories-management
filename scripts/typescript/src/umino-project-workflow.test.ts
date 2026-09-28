@@ -16,8 +16,7 @@ const clearNextActionDateRunScript = (workflowContent: string): string => {
   );
   const runLineIndex = lines.findIndex(
     (line, index) =>
-      index > moveToAwaitingWorkspaceLineIndex &&
-      line.trim() === '- run: |',
+      index > moveToAwaitingWorkspaceLineIndex && line.trim() === '- run: |',
   );
   const bodyIndent = lines[runLineIndex].indexOf('run:') + 2;
   const bodyLines: string[] = [];
@@ -72,9 +71,7 @@ const runClearNextActionDateStep = (
   prNumber: string,
   issueNumber: string,
 ): { exitCode: number | null; stderr: string; firstQueryData: string } => {
-  const sandbox = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'clear-next-action-'),
-  );
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'clear-next-action-'));
   try {
     const stubDirectory = path.join(sandbox, 'bin');
     fs.mkdirSync(stubDirectory);
@@ -85,10 +82,7 @@ const runClearNextActionDateStep = (
     const curlDataDir = path.join(sandbox, 'curl-data');
     fs.mkdirSync(curlDataDir);
     const scriptPath = path.join(sandbox, 'step.sh');
-    fs.writeFileSync(
-      scriptPath,
-      clearNextActionDateRunScript(workflowContent),
-    );
+    fs.writeFileSync(scriptPath, clearNextActionDateRunScript(workflowContent));
     const result = spawnSync('bash', ['-e', scriptPath], {
       encoding: 'utf8',
       env: {
@@ -273,10 +267,7 @@ const substituteGithubEventIdentifiers = (
 ): string =>
   expressionText
     .replace(/github\.event_name/g, JSON.stringify(event.eventName))
-    .replace(
-      /github\.event\.issue\.state/g,
-      JSON.stringify(event.issueState),
-    )
+    .replace(/github\.event\.issue\.state/g, JSON.stringify(event.issueState))
     .replace(
       /github\.event\.pull_request\.state/g,
       JSON.stringify(event.pullRequestState),
@@ -286,7 +277,9 @@ const substituteGithubEventIdentifiers = (
 const isBooleanValue = (value: unknown): value is boolean =>
   typeof value === 'boolean';
 
-const evaluateSubstitutedBooleanExpression = (expressionText: string): boolean => {
+const evaluateSubstitutedBooleanExpression = (
+  expressionText: string,
+): boolean => {
   const evaluated: unknown = eval(expressionText);
   if (!isBooleanValue(evaluated)) {
     throw new Error(
@@ -482,9 +475,10 @@ describe('umino-project.yml workflow', () => {
       clearNextActionDateStepStart,
       autoAssignStepStart,
     );
-    const moveToAwaitingWorkspaceIfCondition = moveToAwaitingWorkspaceStepBlock.slice(
-      moveToAwaitingWorkspaceStepBlock.indexOf('if:'),
-    );
+    const moveToAwaitingWorkspaceIfCondition =
+      moveToAwaitingWorkspaceStepBlock.slice(
+        moveToAwaitingWorkspaceStepBlock.indexOf('if:'),
+      );
     const clearNextActionDateIfCondition = clearNextActionDateStepBlock.slice(
       clearNextActionDateStepBlock.indexOf('if:'),
     );
@@ -584,7 +578,9 @@ describe('umino-project.yml workflow', () => {
       const output = execSync(
         `python3 -c "import yaml, sys, json; d=yaml.safe_load(sys.stdin); print(json.dumps([j['runs-on'] for j in d['jobs'].values()]))"`,
         { input: workflowContent },
-      ).toString().trim();
+      )
+        .toString()
+        .trim();
       const runsOnValues: unknown = JSON.parse(output);
       if (!Array.isArray(runsOnValues)) {
         throw new Error(`unexpected output: ${output}`);
@@ -596,9 +592,13 @@ describe('umino-project.yml workflow', () => {
   });
 
   describe('move-to-awaiting-workspace step behaviour', () => {
-    const awaitingWorkspaceOptionIdMatch = workflowContent.match(/-f optionId="([^"]+)"/);
+    const awaitingWorkspaceOptionIdMatch = workflowContent.match(
+      /-f optionId="([^"]+)"/,
+    );
     const awaitingWorkspaceOptionId =
-      awaitingWorkspaceOptionIdMatch === null ? '' : awaitingWorkspaceOptionIdMatch[1];
+      awaitingWorkspaceOptionIdMatch === null
+        ? ''
+        : awaitingWorkspaceOptionIdMatch[1];
 
     test('the workflow declares the Awaiting Workspace option id the step writes', () => {
       expect(awaitingWorkspaceOptionId).not.toBe('');
@@ -617,21 +617,33 @@ describe('umino-project.yml workflow', () => {
     });
 
     test('writes Awaiting Workspace on a newly opened item that has no Status yet', () => {
-      const result = runMoveToAwaitingWorkspaceStep(workflowContent, 'opened', '');
+      const result = runMoveToAwaitingWorkspaceStep(
+        workflowContent,
+        'opened',
+        '',
+      );
 
       expect(result.stderr).toBe('');
       expect(result.exitCode).toBe(0);
       expect(result.statusWrites).toHaveLength(1);
-      expect(result.statusWrites[0]).toContain(`optionId=${awaitingWorkspaceOptionId}`);
+      expect(result.statusWrites[0]).toContain(
+        `optionId=${awaitingWorkspaceOptionId}`,
+      );
     });
 
     test('writes Awaiting Workspace on a reopened item even when it already has a Status', () => {
-      const result = runMoveToAwaitingWorkspaceStep(workflowContent, 'reopened', 'Done');
+      const result = runMoveToAwaitingWorkspaceStep(
+        workflowContent,
+        'reopened',
+        'Done',
+      );
 
       expect(result.stderr).toBe('');
       expect(result.exitCode).toBe(0);
       expect(result.statusWrites).toHaveLength(1);
-      expect(result.statusWrites[0]).toContain(`optionId=${awaitingWorkspaceOptionId}`);
+      expect(result.statusWrites[0]).toContain(
+        `optionId=${awaitingWorkspaceOptionId}`,
+      );
     });
   });
 
