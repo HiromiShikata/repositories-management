@@ -523,13 +523,18 @@ describe('umino-project.yml workflow', () => {
       );
     });
 
-    test('clear-next-action-date step still evaluates pull_request events (Step B is out of scope for this task and its condition must not change)', () => {
-      expect(clearNextActionDateIfCondition).toContain(
-        "github.event_name == 'pull_request'",
+    test('clear-next-action-date step still fires for a pull_request event (Step B is out of scope for this task and its condition must not change)', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        clearNextActionDateIfCondition,
+        {
+          eventName: 'pull_request',
+          issueState: null,
+          pullRequestState: 'open',
+          action: 'opened',
+        },
       );
-      expect(clearNextActionDateIfCondition).toContain(
-        "github.event.pull_request.state == 'open'",
-      );
+
+      expect(conditionResult).toBe(true);
     });
 
     test('does not exclude hs-bot-gh-app[bot] at umino-job level', () => {
