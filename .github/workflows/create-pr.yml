@@ -7,8 +7,6 @@ name: Create PR
 
 on:
   push:
-    tags-ignore:
-      - '**'
 
 permissions: {}
 
