@@ -106,3 +106,4 @@ jobs:
             "https://api.github.com/graphql" | bash scripts/enable-auto-merge-error-handler.sh
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+# diagnostic probe 2026-09-28T13:11:20Z
