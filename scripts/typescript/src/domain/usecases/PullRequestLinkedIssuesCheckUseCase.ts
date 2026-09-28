@@ -7,6 +7,7 @@ export const EXCLUDED_HEAD_REF_GLOBS: string[] = [
   'dependabot-**',
   'project-common/**',
   'renovate/**',
+  'fleet-live',
   'fleet-live-to-main',
 ];
 

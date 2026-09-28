@@ -36,7 +36,11 @@ class FakeIssueExistenceRepository implements IssueExistenceRepository {
     return this.existingIssueKeys.has(issueKey(owner, repo, issueNumber));
   };
 
-  getRecordedCalls(): Array<{ owner: string; repo: string; issueNumber: number }> {
+  getRecordedCalls(): Array<{
+    owner: string;
+    repo: string;
+    issueNumber: number;
+  }> {
     return this.recordedCalls;
   }
 }
@@ -90,16 +94,14 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
       expected: { kind: 'success', linkedIssueCount: 1 },
     },
     {
-      name:
-        'cross-organization reference that is syntactically valid but does not exist still succeeds, since existence is never checked',
+      name: 'cross-organization reference that is syntactically valid but does not exist still succeeds, since existence is never checked',
       pullRequestBody:
         'Resolves https://github.com/external-org/external-repo/issues/9999999',
       existingIssueKeys: [],
       expected: { kind: 'success', linkedIssueCount: 1 },
     },
     {
-      name:
-        'a same-repository reference and a cross-organization reference together both counted',
+      name: 'a same-repository reference and a cross-organization reference together both counted',
       pullRequestBody:
         'Closes #42 and also fixes https://github.com/external-org/external-repo/issues/99',
       existingIssueKeys: [
@@ -109,8 +111,7 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
       expected: { kind: 'success', linkedIssueCount: 2 },
     },
     {
-      name:
-        'two references to two distinct external organizations are both counted individually',
+      name: 'two references to two distinct external organizations are both counted individually',
       pullRequestBody:
         'Fixes external-org-a/repo-a#111 and closes external-org-b/repo-b#222',
       existingIssueKeys: [
@@ -121,20 +122,23 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
     },
   ];
 
-  test.each(tableCases)('$name', async ({ pullRequestBody, existingIssueKeys, expected }) => {
-    const repository = new FakeIssueExistenceRepository(existingIssueKeys);
-    const useCase = new PullRequestLinkedIssuesCheckUseCase(repository);
+  test.each(tableCases)(
+    '$name',
+    async ({ pullRequestBody, existingIssueKeys, expected }) => {
+      const repository = new FakeIssueExistenceRepository(existingIssueKeys);
+      const useCase = new PullRequestLinkedIssuesCheckUseCase(repository);
 
-    const result = await useCase.run({
-      pullRequestBody,
-      pullRequestRepositoryOwner: SAME_REPOSITORY_OWNER,
-      pullRequestRepositoryName: SAME_REPOSITORY_NAME,
-      pullRequestHeadRef: 'my-feature-branch',
-      accountOwner: ACCOUNT_OWNER,
-    });
+      const result = await useCase.run({
+        pullRequestBody,
+        pullRequestRepositoryOwner: SAME_REPOSITORY_OWNER,
+        pullRequestRepositoryName: SAME_REPOSITORY_NAME,
+        pullRequestHeadRef: 'my-feature-branch',
+        accountOwner: ACCOUNT_OWNER,
+      });
 
-    expect(result).toEqual(expected);
-  });
+      expect(result).toEqual(expected);
+    },
+  );
 
   test('two distinct external-organization references each resolve their own owner and repo, never reusing the first match', async () => {
     const pullRequestBody =
@@ -187,13 +191,18 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
 
     expect(result).toEqual({ kind: 'success', linkedIssueCount: 2 });
     expect(repository.getRecordedCalls()).toEqual([
-      { owner: SAME_REPOSITORY_OWNER, repo: SAME_REPOSITORY_NAME, issueNumber: 42 },
+      {
+        owner: SAME_REPOSITORY_OWNER,
+        repo: SAME_REPOSITORY_NAME,
+        issueNumber: 42,
+      },
     ]);
   });
 
   describe('excluded head ref skips the check without extracting or checking anything', () => {
     const excludedHeadRefCases = [
       'release/2026-09-26',
+      'fleet-live',
       'fleet-live-to-main',
       'dependabot/npm_and_yarn/foo',
     ];
@@ -268,7 +277,11 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
         );
 
         expect(extracted).toEqual([
-          { owner: SAME_REPOSITORY_OWNER, repo: SAME_REPOSITORY_NAME, issueNumber: 7 },
+          {
+            owner: SAME_REPOSITORY_OWNER,
+            repo: SAME_REPOSITORY_NAME,
+            issueNumber: 7,
+          },
         ]);
       },
     );
@@ -324,6 +337,7 @@ describe('isExcludedHeadRef', () => {
       'dependabot-**',
       'project-common/**',
       'renovate/**',
+      'fleet-live',
       'fleet-live-to-main',
     ]);
   });
@@ -340,9 +354,14 @@ describe('isExcludedHeadRef', () => {
     { headRef: 'project-common', expected: false },
     { headRef: 'renovate/foo', expected: true },
     { headRef: 'renovate', expected: false },
+    { headRef: 'fleet-live', expected: true },
+    { headRef: 'fleet-live-2', expected: false },
+    { headRef: 'my-fleet-live-thing', expected: false },
+    { headRef: 'fleet-live-archive', expected: false },
     { headRef: 'fleet-live-to-main', expected: true },
     { headRef: 'fleet-live-to-main-2', expected: false },
     { headRef: 'my-fleet-live-to-main-thing', expected: false },
+    { headRef: 'i1234', expected: false },
     { headRef: 'main', expected: false },
   ];
 
