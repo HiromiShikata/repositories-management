@@ -16,8 +16,7 @@ const clearNextActionDateRunScript = (workflowContent: string): string => {
   );
   const runLineIndex = lines.findIndex(
     (line, index) =>
-      index > moveToAwaitingWorkspaceLineIndex &&
-      line.trim() === '- run: |',
+      index > moveToAwaitingWorkspaceLineIndex && line.trim() === '- run: |',
   );
   const bodyIndent = lines[runLineIndex].indexOf('run:') + 2;
   const bodyLines: string[] = [];
@@ -72,9 +71,7 @@ const runClearNextActionDateStep = (
   prNumber: string,
   issueNumber: string,
 ): { exitCode: number | null; stderr: string; firstQueryData: string } => {
-  const sandbox = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'clear-next-action-'),
-  );
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'clear-next-action-'));
   try {
     const stubDirectory = path.join(sandbox, 'bin');
     fs.mkdirSync(stubDirectory);
@@ -85,10 +82,7 @@ const runClearNextActionDateStep = (
     const curlDataDir = path.join(sandbox, 'curl-data');
     fs.mkdirSync(curlDataDir);
     const scriptPath = path.join(sandbox, 'step.sh');
-    fs.writeFileSync(
-      scriptPath,
-      clearNextActionDateRunScript(workflowContent),
-    );
+    fs.writeFileSync(scriptPath, clearNextActionDateRunScript(workflowContent));
     const result = spawnSync('bash', ['-e', scriptPath], {
       encoding: 'utf8',
       env: {
@@ -236,6 +230,75 @@ const runMoveToAwaitingWorkspaceStep = (
   } finally {
     fs.rmSync(sandbox, { recursive: true, force: true });
   }
+};
+
+type SimulatedGithubEvent = {
+  eventName: string;
+  issueState: string | null;
+  pullRequestState: string | null;
+  action: string;
+};
+
+const extractStepBlockText = (
+  workflowContent: string,
+  stepStartMarker: string,
+  stepEndMarker: string,
+): string => {
+  const stepStart = workflowContent.indexOf(stepStartMarker);
+  const stepEnd = workflowContent.indexOf(stepEndMarker, stepStart);
+  return workflowContent.slice(stepStart, stepEnd);
+};
+
+const extractIfConditionText = (stepBlock: string): string =>
+  stepBlock.slice(stepBlock.indexOf('if:'));
+
+const extractIfExpressionText = (ifConditionText: string): string => {
+  const lines = ifConditionText.split('\n');
+  const expressionLines = lines
+    .slice(1)
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+  return expressionLines.join(' ');
+};
+
+const substituteGithubEventIdentifiers = (
+  expressionText: string,
+  event: SimulatedGithubEvent,
+): string =>
+  expressionText
+    .replace(/github\.event_name/g, JSON.stringify(event.eventName))
+    .replace(/github\.event\.issue\.state/g, JSON.stringify(event.issueState))
+    .replace(
+      /github\.event\.pull_request\.state/g,
+      JSON.stringify(event.pullRequestState),
+    )
+    .replace(/github\.event\.action/g, JSON.stringify(event.action));
+
+const isBooleanValue = (value: unknown): value is boolean =>
+  typeof value === 'boolean';
+
+const evaluateSubstitutedBooleanExpression = (
+  expressionText: string,
+): boolean => {
+  const evaluated: unknown = eval(expressionText);
+  if (!isBooleanValue(evaluated)) {
+    throw new Error(
+      `Expected a boolean result for expression "${expressionText}", got: ${String(evaluated)}`,
+    );
+  }
+  return evaluated;
+};
+
+const evaluateIfConditionForSimulatedEvent = (
+  ifConditionText: string,
+  event: SimulatedGithubEvent,
+): boolean => {
+  const expressionText = extractIfExpressionText(ifConditionText);
+  const substitutedExpressionText = substituteGithubEventIdentifiers(
+    expressionText,
+    event,
+  );
+  return evaluateSubstitutedBooleanExpression(substitutedExpressionText);
 };
 
 describe('umino-project.yml workflow', () => {
@@ -412,9 +475,10 @@ describe('umino-project.yml workflow', () => {
       clearNextActionDateStepStart,
       autoAssignStepStart,
     );
-    const moveToAwaitingWorkspaceIfCondition = moveToAwaitingWorkspaceStepBlock.slice(
-      moveToAwaitingWorkspaceStepBlock.indexOf('if:'),
-    );
+    const moveToAwaitingWorkspaceIfCondition =
+      moveToAwaitingWorkspaceStepBlock.slice(
+        moveToAwaitingWorkspaceStepBlock.indexOf('if:'),
+      );
     const clearNextActionDateIfCondition = clearNextActionDateStepBlock.slice(
       clearNextActionDateStepBlock.indexOf('if:'),
     );
@@ -457,6 +521,20 @@ describe('umino-project.yml workflow', () => {
       expect(clearNextActionDateIfCondition).toContain(
         "github.event.action == 'reopened'",
       );
+    });
+
+    test('clear-next-action-date step still fires for a pull_request event (Step B is out of scope for this task and its condition must not change)', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        clearNextActionDateIfCondition,
+        {
+          eventName: 'pull_request',
+          issueState: null,
+          pullRequestState: 'open',
+          action: 'opened',
+        },
+      );
+
+      expect(conditionResult).toBe(true);
     });
 
     test('does not exclude hs-bot-gh-app[bot] at umino-job level', () => {
@@ -505,7 +583,9 @@ describe('umino-project.yml workflow', () => {
       const output = execSync(
         `python3 -c "import yaml, sys, json; d=yaml.safe_load(sys.stdin); print(json.dumps([j['runs-on'] for j in d['jobs'].values()]))"`,
         { input: workflowContent },
-      ).toString().trim();
+      )
+        .toString()
+        .trim();
       const runsOnValues: unknown = JSON.parse(output);
       if (!Array.isArray(runsOnValues)) {
         throw new Error(`unexpected output: ${output}`);
@@ -517,9 +597,13 @@ describe('umino-project.yml workflow', () => {
   });
 
   describe('move-to-awaiting-workspace step behaviour', () => {
-    const awaitingWorkspaceOptionIdMatch = workflowContent.match(/-f optionId="([^"]+)"/);
+    const awaitingWorkspaceOptionIdMatch = workflowContent.match(
+      /-f optionId="([^"]+)"/,
+    );
     const awaitingWorkspaceOptionId =
-      awaitingWorkspaceOptionIdMatch === null ? '' : awaitingWorkspaceOptionIdMatch[1];
+      awaitingWorkspaceOptionIdMatch === null
+        ? ''
+        : awaitingWorkspaceOptionIdMatch[1];
 
     test('the workflow declares the Awaiting Workspace option id the step writes', () => {
       expect(awaitingWorkspaceOptionId).not.toBe('');
@@ -538,21 +622,117 @@ describe('umino-project.yml workflow', () => {
     });
 
     test('writes Awaiting Workspace on a newly opened item that has no Status yet', () => {
-      const result = runMoveToAwaitingWorkspaceStep(workflowContent, 'opened', '');
+      const result = runMoveToAwaitingWorkspaceStep(
+        workflowContent,
+        'opened',
+        '',
+      );
 
       expect(result.stderr).toBe('');
       expect(result.exitCode).toBe(0);
       expect(result.statusWrites).toHaveLength(1);
-      expect(result.statusWrites[0]).toContain(`optionId=${awaitingWorkspaceOptionId}`);
+      expect(result.statusWrites[0]).toContain(
+        `optionId=${awaitingWorkspaceOptionId}`,
+      );
     });
 
     test('writes Awaiting Workspace on a reopened item even when it already has a Status', () => {
-      const result = runMoveToAwaitingWorkspaceStep(workflowContent, 'reopened', 'Done');
+      const result = runMoveToAwaitingWorkspaceStep(
+        workflowContent,
+        'reopened',
+        'Done',
+      );
 
       expect(result.stderr).toBe('');
       expect(result.exitCode).toBe(0);
       expect(result.statusWrites).toHaveLength(1);
-      expect(result.statusWrites[0]).toContain(`optionId=${awaitingWorkspaceOptionId}`);
+      expect(result.statusWrites[0]).toContain(
+        `optionId=${awaitingWorkspaceOptionId}`,
+      );
+    });
+  });
+
+  describe('move-to-awaiting-workspace step if-condition evaluation for pull_request vs issues events (Step A criterion)', () => {
+    const moveToAwaitingWorkspaceIfCondition = extractIfConditionText(
+      extractStepBlockText(
+        workflowContent,
+        '- name: Move issue to',
+        '- run: |',
+      ),
+    );
+
+    test('does not fire for a newly opened pull_request event, so addProjectV2ItemById is not invoked', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        moveToAwaitingWorkspaceIfCondition,
+        {
+          eventName: 'pull_request',
+          issueState: null,
+          pullRequestState: 'open',
+          action: 'opened',
+        },
+      );
+
+      expect(conditionResult).toBe(false);
+    });
+
+    test('does not fire for a reopened pull_request event, so addProjectV2ItemById is not invoked', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        moveToAwaitingWorkspaceIfCondition,
+        {
+          eventName: 'pull_request',
+          issueState: null,
+          pullRequestState: 'open',
+          action: 'reopened',
+        },
+      );
+
+      expect(conditionResult).toBe(false);
+    });
+
+    test('still fires for a newly opened issues event, so addProjectV2ItemById is still invoked and Status is still written', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        moveToAwaitingWorkspaceIfCondition,
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'opened',
+        },
+      );
+
+      expect(conditionResult).toBe(true);
+
+      const result = runMoveToAwaitingWorkspaceStep(
+        workflowContent,
+        'opened',
+        '',
+      );
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.statusWrites).toHaveLength(1);
+    });
+
+    test('still fires for a reopened issues event, so addProjectV2ItemById is still invoked and Status is still written', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        moveToAwaitingWorkspaceIfCondition,
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'reopened',
+        },
+      );
+
+      expect(conditionResult).toBe(true);
+
+      const result = runMoveToAwaitingWorkspaceStep(
+        workflowContent,
+        'reopened',
+        'Done',
+      );
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.statusWrites).toHaveLength(1);
     });
   });
 
