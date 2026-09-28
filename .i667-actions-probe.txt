@@ -1,0 +1,1 @@
+probe for https://github.com/HiromiShikata/repositories-management/issues/667 (2026-09-28T10:09:22Z)
