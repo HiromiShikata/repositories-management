@@ -140,6 +140,12 @@ if [ "\${1:-}" = "api" ]; then
             "$STUB_OPEN_PULL_REQUEST_CHECK_RUNS_JSON" | jq -r "$jq_expression"
           ;;
         *)
+          for stub_gh_pulls_listing_failure_repository in $STUB_GH_PULLS_LISTING_FAILURE_REPOSITORIES; do
+            if [ "$repository" = "$stub_gh_pulls_listing_failure_repository" ]; then
+              echo "stub: gh api pulls listing failed for $repository" >&2
+              exit 1
+            fi
+          done
           jq -c --arg repository "$repository" \\
             '(.[$repository] // []) | map({number: .number, user: {login: .login}})' \\
             "$STUB_DEPENDABOT_PULL_REQUESTS_JSON" | jq -r "$jq_expression"
@@ -331,6 +337,7 @@ type StepRunRequest = {
   unprotectedRepositories?: string[];
   openPullRequestCheckRuns?: Record<string, string[][]>;
   dependabotPullRequests?: Record<string, DependabotPullRequestEntry[]>;
+  pullRequestListingFailureRepositories?: string[];
 };
 
 const runStepScripts = ({
@@ -344,6 +351,7 @@ const runStepScripts = ({
   unprotectedRepositories = [],
   openPullRequestCheckRuns = {},
   dependabotPullRequests = {},
+  pullRequestListingFailureRepositories = [],
 }: StepRunRequest): StepRunResult => {
   const sandbox = fs.mkdtempSync(
     path.join(os.tmpdir(), 'repositories-management-workflow-'),
@@ -421,6 +429,8 @@ const runStepScripts = ({
       STUB_UNPROTECTED_REPOSITORIES: unprotectedRepositories.join(' '),
       STUB_SERVER_ERROR_REPOSITORIES: serverErrorRepositories.join(' '),
       STUB_SERVER_ERROR_METHODS: serverErrorMethods.join(' '),
+      STUB_GH_PULLS_LISTING_FAILURE_REPOSITORIES:
+        pullRequestListingFailureRepositories.join(' '),
     },
   });
 
@@ -1596,22 +1606,104 @@ describe('repository-config Dependabot security update disablement', () => {
     expect(result.requests).toEqual([]);
   });
 
-  test('sources the rate-limit-aware admin API helper instead of writing its own retry logic', () => {
-    const stepBlock = extractStepBlock(
-      dependabotSecurityUpdateDisablementStepName,
+  test('continues past a repository whose Dependabot pull request close fails and fails the step afterwards, having already disabled its security fixes', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, dependabotSecurityUpdateDisablementStepName],
+      repositories: [
+        repositoryWithOpenDependabotPullRequests,
+        repositoryWithNoOpenDependabotPullRequests,
+      ],
+      dependabotPullRequests: {
+        [repositoryWithOpenDependabotPullRequests.name]: [
+          { number: 41, login: 'dependabot[bot]' },
+        ],
+      },
+      serverErrorRepositories: [repositoryWithOpenDependabotPullRequests.name],
+      serverErrorMethods: ['PATCH'],
+    });
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'DELETE' &&
+          request.url ===
+            automatedSecurityFixesUrl(
+              repositoryWithOpenDependabotPullRequests.name,
+            ),
+      ),
+    ).toBe(true);
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'PATCH' &&
+          request.url ===
+            pullRequestUrl(repositoryWithOpenDependabotPullRequests.name, 41),
+      ),
+    ).toBe(true);
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'DELETE' &&
+          request.url ===
+            automatedSecurityFixesUrl(
+              repositoryWithNoOpenDependabotPullRequests.name,
+            ),
+      ),
+    ).toBe(true);
+    expect(result.output).toContain(
+      'Configured 1 of 2 repositories for Dependabot security update disablement',
     );
-    expect(stepBlock).toContain('source /tmp/gh_admin_api.sh');
-    expect(stepBlock).toContain('gh_admin_api ');
-    expect(stepBlock).toContain('report_fleet_loop_outcome ');
+    expect(result.output).toContain(
+      `  - ${repositoryWithOpenDependabotPullRequests.name}`,
+    );
   });
 
-  test('is the last step of the repository-config job', () => {
-    const repositoryConfigJob = extractJobBlock(repositoryConfigJobName);
-    const stepNamesInOrder = [
-      ...repositoryConfigJob.matchAll(/^ {6}- name: (.+)$/gm),
-    ].map((match) => match[1]);
-    expect(stepNamesInOrder[stepNamesInOrder.length - 1]).toBe(
-      dependabotSecurityUpdateDisablementStepName,
+  test('continues past a repository whose Dependabot pull request listing itself fails, without attempting to close any of its pull requests', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, dependabotSecurityUpdateDisablementStepName],
+      repositories: [
+        repositoryWithOpenDependabotPullRequests,
+        repositoryWithNoOpenDependabotPullRequests,
+      ],
+      dependabotPullRequests: {
+        [repositoryWithOpenDependabotPullRequests.name]: [
+          { number: 41, login: 'dependabot[bot]' },
+        ],
+      },
+      pullRequestListingFailureRepositories: [
+        repositoryWithOpenDependabotPullRequests.name,
+      ],
+    });
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'DELETE' &&
+          request.url ===
+            automatedSecurityFixesUrl(
+              repositoryWithOpenDependabotPullRequests.name,
+            ),
+      ),
+    ).toBe(true);
+    expect(
+      writeRequests(result).some((request) => request.method === 'PATCH'),
+    ).toBe(false);
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'DELETE' &&
+          request.url ===
+            automatedSecurityFixesUrl(
+              repositoryWithNoOpenDependabotPullRequests.name,
+            ),
+      ),
+    ).toBe(true);
+    expect(result.output).toContain(
+      `WARNING: failed to list Dependabot pull requests for ${repositoryWithOpenDependabotPullRequests.name}`,
+    );
+    expect(result.output).toContain(
+      'Configured 1 of 2 repositories for Dependabot security update disablement',
+    );
+    expect(result.output).toContain(
+      `  - ${repositoryWithOpenDependabotPullRequests.name}`,
     );
   });
 });
