@@ -237,6 +237,9 @@ type SimulatedGithubEvent = {
   issueState: string | null;
   pullRequestState: string | null;
   action: string;
+  repository?: string;
+  actor?: string;
+  pullRequestAuthorLogin?: string | null;
 };
 
 const extractStepBlockText = (
@@ -247,6 +250,27 @@ const extractStepBlockText = (
   const stepStart = workflowContent.indexOf(stepStartMarker);
   const stepEnd = workflowContent.indexOf(stepEndMarker, stepStart);
   return workflowContent.slice(stepStart, stepEnd);
+};
+
+const extractJobIfConditionText = (
+  workflowContent: string,
+  jobNameMarker: string,
+): string => {
+  const lines = workflowContent.split('\n');
+  const jobLineIndex = lines.findIndex((line) => line.includes(jobNameMarker));
+  const ifLineIndex = lines.findIndex(
+    (line, index) => index > jobLineIndex && line.trim().startsWith('if:'),
+  );
+  const bodyIndent = lines[ifLineIndex].indexOf('if:') + 2;
+  const conditionLines = [lines[ifLineIndex]];
+  for (let index = ifLineIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() !== '' && !line.startsWith(' '.repeat(bodyIndent))) {
+      break;
+    }
+    conditionLines.push(line);
+  }
+  return conditionLines.join('\n');
 };
 
 const extractIfConditionText = (stepBlock: string): string =>
@@ -272,10 +296,34 @@ const substituteGithubEventIdentifiers = (
       /github\.event\.pull_request\.state/g,
       JSON.stringify(event.pullRequestState),
     )
-    .replace(/github\.event\.action/g, JSON.stringify(event.action));
+    .replace(/github\.event\.action/g, JSON.stringify(event.action))
+    .replace(
+      /github\.event\.pull_request\.user\.login/g,
+      event.pullRequestAuthorLogin === undefined
+        ? 'undefined'
+        : JSON.stringify(event.pullRequestAuthorLogin),
+    )
+    .replace(
+      /github\.repository/g,
+      event.repository === undefined
+        ? 'undefined'
+        : JSON.stringify(event.repository),
+    )
+    .replace(
+      /github\.actor/g,
+      event.actor === undefined ? 'undefined' : JSON.stringify(event.actor),
+    );
 
 const isBooleanValue = (value: unknown): value is boolean =>
   typeof value === 'boolean';
+
+const isRecordWithKey = (
+  value: object,
+  key: string,
+): value is Record<string, unknown> => key in value;
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
 
 const evaluateSubstitutedBooleanExpression = (
   expressionText: string,
@@ -308,150 +356,159 @@ describe('umino-project.yml workflow', () => {
   );
 
   describe('umino-job condition', () => {
+    const uminoJobIfCondition = extractJobIfConditionText(
+      workflowContent,
+      'umino-job:',
+    );
+    const baseSimulatedEvent: SimulatedGithubEvent = {
+      eventName: 'issues',
+      issueState: 'open',
+      pullRequestState: null,
+      action: 'opened',
+      repository: 'HiromiShikata/some-repo',
+      actor: 'HiromiShikata',
+    };
+
+    test('runs for a normal actor in a normal repository', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        uminoJobIfCondition,
+        baseSimulatedEvent,
+      );
+
+      expect(conditionResult).toBe(true);
+    });
+
     test('excludes dependabot[bot] actor', () => {
-      expect(workflowContent).toContain("github.actor != 'dependabot[bot]'");
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        uminoJobIfCondition,
+        { ...baseSimulatedEvent, actor: 'dependabot[bot]' },
+      );
+
+      expect(conditionResult).toBe(false);
     });
 
     test('excludes app/dependabot actor', () => {
-      const uminoJobStart = workflowContent.indexOf('umino-job:');
-      const nextJob = workflowContent.indexOf('\n  check_', uminoJobStart);
-      const uminoJobBlock = workflowContent.slice(uminoJobStart, nextJob);
-      expect(uminoJobBlock).toContain("github.actor != 'app/dependabot'");
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        uminoJobIfCondition,
+        { ...baseSimulatedEvent, actor: 'app/dependabot' },
+      );
+
+      expect(conditionResult).toBe(false);
     });
 
     test('is skipped inside HiromiShikata/test-repository', () => {
-      const uminoJobStart = workflowContent.indexOf('umino-job:');
-      const nextJob = workflowContent.indexOf('\n  check_', uminoJobStart);
-      const uminoJobBlock = workflowContent.slice(uminoJobStart, nextJob);
-      expect(uminoJobBlock).toContain(
-        "github.repository != 'HiromiShikata/test-repository'",
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        uminoJobIfCondition,
+        { ...baseSimulatedEvent, repository: 'HiromiShikata/test-repository' },
       );
+
+      expect(conditionResult).toBe(false);
     });
   });
 
   describe('check_pull_requests_to_link_issues job condition', () => {
-    test('only runs on pull_request events', () => {
-      expect(workflowContent).toContain(
-        "(github.event_name == 'pull_request')",
-      );
-    });
-
-    test('excludes dependabot[bot] actor', () => {
-      const checkJobStart = workflowContent.indexOf(
-        'check_pull_requests_to_link_issues:',
-      );
-      const checkJobBlock = workflowContent.slice(checkJobStart);
-      expect(checkJobBlock).toContain("github.actor != 'dependabot[bot]'");
-    });
-
-    test('excludes app/dependabot actor', () => {
-      const checkJobStart = workflowContent.indexOf(
-        'check_pull_requests_to_link_issues:',
-      );
-      const checkJobBlock = workflowContent.slice(checkJobStart);
-      expect(checkJobBlock).toContain("github.actor != 'app/dependabot'");
-    });
-
-    test('is skipped inside HiromiShikata/test-repository', () => {
-      const checkJobStart = workflowContent.indexOf(
-        'check_pull_requests_to_link_issues:',
-      );
-      const checkJobBlock = workflowContent.slice(checkJobStart);
-      expect(checkJobBlock).toContain(
-        "github.repository != 'HiromiShikata/test-repository'",
-      );
-    });
-
-    test('job-level condition excludes dependabot[bot] PR author by user.login', () => {
-      const checkJobStart = workflowContent.indexOf(
-        'check_pull_requests_to_link_issues:',
-      );
-      const checkJobStepsStart = workflowContent.indexOf(
-        '\n    steps:',
-        checkJobStart,
-      );
-      const jobIfBlock = workflowContent.slice(
-        checkJobStart,
-        checkJobStepsStart,
-      );
-      expect(jobIfBlock).toContain(
-        "github.event.pull_request.user.login != 'dependabot[bot]'",
-      );
-    });
-
-    test('skips opened event so impl agent can edit PR body before check runs', () => {
-      const checkJobStart = workflowContent.indexOf(
-        'check_pull_requests_to_link_issues:',
-      );
-      const checkJobStepsStart = workflowContent.indexOf(
-        '\n    steps:',
-        checkJobStart,
-      );
-      const jobIfBlock = workflowContent.slice(
-        checkJobStart,
-        checkJobStepsStart,
-      );
-      expect(jobIfBlock).not.toContain("github.event.action == 'opened'");
-    });
-
-    test('skips labeled event so impl agent can edit PR body before check runs', () => {
-      const checkJobStart = workflowContent.indexOf(
-        'check_pull_requests_to_link_issues:',
-      );
-      const checkJobStepsStart = workflowContent.indexOf(
-        '\n    steps:',
-        checkJobStart,
-      );
-      const jobIfBlock = workflowContent.slice(
-        checkJobStart,
-        checkJobStepsStart,
-      );
-      expect(jobIfBlock).not.toContain("github.event.action == 'labeled'");
-    });
+    const checkJobIfCondition = extractJobIfConditionText(
+      workflowContent,
+      'check_pull_requests_to_link_issues:',
+    );
+    const baseSimulatedEvent: SimulatedGithubEvent = {
+      eventName: 'pull_request',
+      issueState: null,
+      pullRequestState: 'open',
+      action: 'edited',
+      repository: 'HiromiShikata/some-repo',
+      actor: 'HiromiShikata',
+      pullRequestAuthorLogin: 'HiromiShikata',
+    };
 
     test('runs on edited event after impl agent adds closing keyword to PR body', () => {
-      const checkJobStart = workflowContent.indexOf(
-        'check_pull_requests_to_link_issues:',
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        checkJobIfCondition,
+        baseSimulatedEvent,
       );
-      const checkJobStepsStart = workflowContent.indexOf(
-        '\n    steps:',
-        checkJobStart,
-      );
-      const jobIfBlock = workflowContent.slice(
-        checkJobStart,
-        checkJobStepsStart,
-      );
-      expect(jobIfBlock).toContain("github.event.action == 'edited'");
+
+      expect(conditionResult).toBe(true);
     });
 
     test('runs on synchronize event after impl agent pushes commits', () => {
-      const checkJobStart = workflowContent.indexOf(
-        'check_pull_requests_to_link_issues:',
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        checkJobIfCondition,
+        { ...baseSimulatedEvent, action: 'synchronize' },
       );
-      const checkJobStepsStart = workflowContent.indexOf(
-        '\n    steps:',
-        checkJobStart,
-      );
-      const jobIfBlock = workflowContent.slice(
-        checkJobStart,
-        checkJobStepsStart,
-      );
-      expect(jobIfBlock).toContain("github.event.action == 'synchronize'");
+
+      expect(conditionResult).toBe(true);
     });
 
     test('runs on reopened event', () => {
-      const checkJobStart = workflowContent.indexOf(
-        'check_pull_requests_to_link_issues:',
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        checkJobIfCondition,
+        { ...baseSimulatedEvent, action: 'reopened' },
       );
-      const checkJobStepsStart = workflowContent.indexOf(
-        '\n    steps:',
-        checkJobStart,
+
+      expect(conditionResult).toBe(true);
+    });
+
+    test('skips opened event so impl agent can edit PR body before check runs', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        checkJobIfCondition,
+        { ...baseSimulatedEvent, action: 'opened' },
       );
-      const jobIfBlock = workflowContent.slice(
-        checkJobStart,
-        checkJobStepsStart,
+
+      expect(conditionResult).toBe(false);
+    });
+
+    test('skips labeled event so impl agent can edit PR body before check runs', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        checkJobIfCondition,
+        { ...baseSimulatedEvent, action: 'labeled' },
       );
-      expect(jobIfBlock).toContain("github.event.action == 'reopened'");
+
+      expect(conditionResult).toBe(false);
+    });
+
+    test('only runs on pull_request events', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        checkJobIfCondition,
+        { ...baseSimulatedEvent, eventName: 'issues' },
+      );
+
+      expect(conditionResult).toBe(false);
+    });
+
+    test('excludes dependabot[bot] actor', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        checkJobIfCondition,
+        { ...baseSimulatedEvent, actor: 'dependabot[bot]' },
+      );
+
+      expect(conditionResult).toBe(false);
+    });
+
+    test('excludes app/dependabot actor', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        checkJobIfCondition,
+        { ...baseSimulatedEvent, actor: 'app/dependabot' },
+      );
+
+      expect(conditionResult).toBe(false);
+    });
+
+    test('is skipped inside HiromiShikata/test-repository', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        checkJobIfCondition,
+        { ...baseSimulatedEvent, repository: 'HiromiShikata/test-repository' },
+      );
+
+      expect(conditionResult).toBe(false);
+    });
+
+    test('job-level condition excludes dependabot[bot] PR author by user.login', () => {
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        checkJobIfCondition,
+        { ...baseSimulatedEvent, pullRequestAuthorLogin: 'dependabot[bot]' },
+      );
+
+      expect(conditionResult).toBe(false);
     });
   });
 
@@ -484,43 +541,115 @@ describe('umino-project.yml workflow', () => {
     );
 
     test('move-to-awaiting-workspace step does not revert status on assigned action', () => {
-      expect(moveToAwaitingWorkspaceIfCondition).not.toContain("'assigned'");
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        moveToAwaitingWorkspaceIfCondition,
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'assigned',
+        },
+      );
+
+      expect(conditionResult).toBe(false);
     });
 
     test('move-to-awaiting-workspace step does not revert status on unassigned action', () => {
-      expect(moveToAwaitingWorkspaceIfCondition).not.toContain("'unassigned'");
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        moveToAwaitingWorkspaceIfCondition,
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'unassigned',
+        },
+      );
+
+      expect(conditionResult).toBe(false);
     });
 
     test('move-to-awaiting-workspace step still fires on opened action', () => {
-      expect(moveToAwaitingWorkspaceIfCondition).toContain(
-        "github.event.action == 'opened'",
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        moveToAwaitingWorkspaceIfCondition,
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'opened',
+        },
       );
+
+      expect(conditionResult).toBe(true);
     });
 
     test('move-to-awaiting-workspace step still fires on reopened action', () => {
-      expect(moveToAwaitingWorkspaceIfCondition).toContain(
-        "github.event.action == 'reopened'",
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        moveToAwaitingWorkspaceIfCondition,
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'reopened',
+        },
       );
+
+      expect(conditionResult).toBe(true);
     });
 
     test('clear-next-action-date step does not revert status on assigned action', () => {
-      expect(clearNextActionDateIfCondition).not.toContain("'assigned'");
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        clearNextActionDateIfCondition,
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'assigned',
+        },
+      );
+
+      expect(conditionResult).toBe(false);
     });
 
     test('clear-next-action-date step does not revert status on unassigned action', () => {
-      expect(clearNextActionDateIfCondition).not.toContain("'unassigned'");
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        clearNextActionDateIfCondition,
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'unassigned',
+        },
+      );
+
+      expect(conditionResult).toBe(false);
     });
 
     test('clear-next-action-date step still fires on opened action', () => {
-      expect(clearNextActionDateIfCondition).toContain(
-        "github.event.action == 'opened'",
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        clearNextActionDateIfCondition,
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'opened',
+        },
       );
+
+      expect(conditionResult).toBe(true);
     });
 
     test('clear-next-action-date step still fires on reopened action', () => {
-      expect(clearNextActionDateIfCondition).toContain(
-        "github.event.action == 'reopened'",
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        clearNextActionDateIfCondition,
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'reopened',
+        },
       );
+
+      expect(conditionResult).toBe(true);
     });
 
     test('clear-next-action-date step still fires for a pull_request event (Step B is out of scope for this task and its condition must not change)', () => {
@@ -538,43 +667,50 @@ describe('umino-project.yml workflow', () => {
     });
 
     test('does not exclude hs-bot-gh-app[bot] at umino-job level', () => {
-      const uminoJobStart = workflowContent.indexOf('umino-job:');
-      const firstStepStart = workflowContent.indexOf(
-        '    steps:',
-        uminoJobStart,
+      const conditionResult = evaluateIfConditionForSimulatedEvent(
+        extractJobIfConditionText(workflowContent, 'umino-job:'),
+        {
+          eventName: 'issues',
+          issueState: 'open',
+          pullRequestState: null,
+          action: 'opened',
+          repository: 'HiromiShikata/some-repo',
+          actor: 'hs-bot-gh-app[bot]',
+        },
       );
-      const jobConditionBlock = workflowContent.slice(
-        uminoJobStart,
-        firstStepStart,
-      );
-      expect(jobConditionBlock).not.toContain(
-        "github.actor != 'hs-bot-gh-app[bot]'",
-      );
+
+      expect(conditionResult).toBe(true);
     });
   });
 
   describe('workflow event triggers', () => {
-    const onSectionStart = workflowContent.indexOf('\non:');
-    const envSectionStart = workflowContent.indexOf('\nenv:', onSectionStart);
-    const onSection = workflowContent.slice(onSectionStart, envSectionStart);
+    test('issues and pull_request triggers exclude assignment events while issues still triggers on opened and reopened', () => {
+      const output = execSync(
+        `python3 -c "import yaml, sys, json; d=yaml.safe_load(sys.stdin); on_section=d[True]; print(json.dumps({k: v['types'] for k, v in on_section.items()}))"`,
+        { input: workflowContent },
+      )
+        .toString()
+        .trim();
+      const triggerTypesByEvent: unknown = JSON.parse(output);
+      if (
+        triggerTypesByEvent === null ||
+        typeof triggerTypesByEvent !== 'object' ||
+        !isRecordWithKey(triggerTypesByEvent, 'issues') ||
+        !isRecordWithKey(triggerTypesByEvent, 'pull_request')
+      ) {
+        throw new Error(`unexpected output: ${output}`);
+      }
+      const { issues, pull_request: pullRequest } = triggerTypesByEvent;
+      if (!isStringArray(issues) || !isStringArray(pullRequest)) {
+        throw new Error(`unexpected output: ${output}`);
+      }
 
-    test('does not trigger on assigned event', () => {
-      expect(onSection).not.toContain('- assigned');
-    });
-
-    test('does not trigger on unassigned event', () => {
-      expect(onSection).not.toContain('- unassigned');
-    });
-
-    test('still triggers issues on opened and reopened events', () => {
-      const issuesTypesStart = onSection.indexOf('issues:');
-      const pullRequestStart = onSection.indexOf(
-        'pull_request:',
-        issuesTypesStart,
-      );
-      const issuesBlock = onSection.slice(issuesTypesStart, pullRequestStart);
-      expect(issuesBlock).toContain('- opened');
-      expect(issuesBlock).toContain('- reopened');
+      expect(issues).not.toContain('assigned');
+      expect(issues).not.toContain('unassigned');
+      expect(pullRequest).not.toContain('assigned');
+      expect(pullRequest).not.toContain('unassigned');
+      expect(issues).toContain('opened');
+      expect(issues).toContain('reopened');
     });
   });
 
@@ -606,7 +742,23 @@ describe('umino-project.yml workflow', () => {
         : awaitingWorkspaceOptionIdMatch[1];
 
     test('the workflow declares the Awaiting Workspace option id the step writes', () => {
-      expect(awaitingWorkspaceOptionId).not.toBe('');
+      const result = runMoveToAwaitingWorkspaceStep(
+        workflowContent,
+        'opened',
+        '',
+      );
+
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.statusWrites).toHaveLength(1);
+
+      const writtenOptionIdMatch =
+        result.statusWrites[0].match(/optionId=(\S+)/);
+      const writtenOptionId =
+        writtenOptionIdMatch === null ? '' : writtenOptionIdMatch[1];
+
+      expect(writtenOptionId).not.toBe('');
+      expect(writtenOptionId).toBe(awaitingWorkspaceOptionId);
     });
 
     test('keeps a Status that was already set on a newly opened item', () => {
