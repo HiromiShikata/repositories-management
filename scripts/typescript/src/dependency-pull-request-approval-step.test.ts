@@ -40,7 +40,11 @@ const extractRunScript = (): string => {
 
 type RepositoryListEntry = { name: string; isArchived: boolean };
 
-type CheckRunEntry = { name: string; status: string; conclusion: string | null };
+type CheckRunEntry = {
+  name: string;
+  status: string;
+  conclusion: string | null;
+};
 
 type PullRequestEntry = {
   number: number;
@@ -163,7 +167,10 @@ const runStep = (
   };
 };
 
-const pullRequestUrl = (repository: string, pullRequestNumber: number): string =>
+const pullRequestUrl = (
+  repository: string,
+  pullRequestNumber: number,
+): string =>
   `https://github.com/${organizationName}/${repository}/pull/${pullRequestNumber}`;
 
 describe('repositories-management dependency pull request approval step', () => {
@@ -218,6 +225,12 @@ describe('repositories-management dependency pull request approval step', () => 
         headRef: 'i123',
         checkRuns: successfulCheckRuns,
       },
+      {
+        number: 18,
+        login: 'dependabot[bot]',
+        headRef: 'project-common/update-common-files-20260901000000',
+        checkRuns: successfulCheckRuns,
+      },
     ],
     'archived-repository': [
       {
@@ -229,27 +242,39 @@ describe('repositories-management dependency pull request approval step', () => 
     ],
   };
 
-  test('approves every open dependabot and renovate pull request whose checks all succeeded', () => {
+  test('no longer approves a dependabot or renovate pull request whose head ref is not a common file sync branch', () => {
     const result = runStep(repositories, openPullRequests);
     expect(result.output).not.toContain('unexpected gh invocation');
     expect(result.status).toBe(0);
+    expect(
+      result.log.filter(
+        (line) =>
+          line.startsWith('pr ') &&
+          (line.includes(pullRequestUrl('active-repository', 11)) ||
+            line.includes(pullRequestUrl('active-repository', 12))),
+      ).length,
+    ).toBe(0);
+  });
+
+  test('approves and merges a common file sync pull request regardless of its author login', () => {
+    const result = runStep(repositories, openPullRequests);
     expect(result.log).toContain(
-      `pr review --approve ${pullRequestUrl('active-repository', 11)}`,
+      `pr review --approve ${pullRequestUrl('active-repository', 18)}`,
     );
     expect(result.log).toContain(
-      `pr review --approve ${pullRequestUrl('active-repository', 12)}`,
+      `pr merge --auto --squash ${pullRequestUrl('active-repository', 18)}`,
     );
   });
 
   test('enables auto merge on every pull request it approves', () => {
     const result = runStep(repositories, openPullRequests);
     expect(result.log).toContain(
-      `pr merge --auto --squash ${pullRequestUrl('active-repository', 11)}`,
+      `pr merge --auto --squash ${pullRequestUrl('active-repository', 16)}`,
     );
   });
 
   test('merges directly when enabling auto merge is refused', () => {
-    const refusedUrl = pullRequestUrl('active-repository', 11);
+    const refusedUrl = pullRequestUrl('active-repository', 16);
     const result = runStep(repositories, openPullRequests, [refusedUrl]);
     expect(result.log).toContain(`pr merge --squash ${refusedUrl}`);
   });
@@ -311,7 +336,8 @@ describe('repositories-management dependency pull request approval step', () => 
   test('skips archived repositories', () => {
     const result = runStep(repositories, openPullRequests);
     expect(
-      result.log.filter((line) => line.includes('/archived-repository/')).length,
+      result.log.filter((line) => line.includes('/archived-repository/'))
+        .length,
     ).toBe(0);
   });
 });

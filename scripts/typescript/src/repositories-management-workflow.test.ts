@@ -133,9 +133,24 @@ if [ "\${1:-}" = "api" ]; then
   case "$endpoint" in
     repos/*/pulls*)
       repository="$(printf '%s' "$endpoint" | sed -E 's#^repos/[^/]+/([^/]+)/pulls.*#\\1#')"
-      jq -c --arg repository "$repository" \\
-        '(.[$repository] // []) | to_entries | map({head: {sha: ($repository + "-pull-request-" + (.key | tostring))}})' \\
-        "$STUB_OPEN_PULL_REQUEST_CHECK_RUNS_JSON" | jq -r "$jq_expression"
+      case "$jq_expression" in
+        *.head.sha*)
+          jq -c --arg repository "$repository" \\
+            '(.[$repository] // []) | to_entries | map({head: {sha: ($repository + "-pull-request-" + (.key | tostring))}})' \\
+            "$STUB_OPEN_PULL_REQUEST_CHECK_RUNS_JSON" | jq -r "$jq_expression"
+          ;;
+        *)
+          for stub_gh_pulls_listing_failure_repository in $STUB_GH_PULLS_LISTING_FAILURE_REPOSITORIES; do
+            if [ "$repository" = "$stub_gh_pulls_listing_failure_repository" ]; then
+              echo "stub: gh api pulls listing failed for $repository" >&2
+              exit 1
+            fi
+          done
+          jq -c --arg repository "$repository" \\
+            '(.[$repository] // []) | map({number: .number, user: {login: .login}})' \\
+            "$STUB_DEPENDABOT_PULL_REQUESTS_JSON" | jq -r "$jq_expression"
+          ;;
+      esac
       exit 0
       ;;
     repos/*/commits/*/check-runs*)
@@ -210,6 +225,9 @@ if [ "$method" = "GET" ]; then
   esac
 else
   response_body='{}'
+  if [ "$method" = "DELETE" ]; then
+    status="204"
+  fi
 fi
 for unprotected_repository in $STUB_UNPROTECTED_REPOSITORIES; do
   case "$request_url" in
@@ -306,6 +324,8 @@ const parseRecordedRequest = (loggedLine: string): RecordedRequest => {
 
 const emptyRulesetListResponse = '[]';
 
+type DependabotPullRequestEntry = { number: number; login: string };
+
 type StepRunRequest = {
   stepNames: string[];
   repositories: RepositoryListEntry[];
@@ -316,6 +336,8 @@ type StepRunRequest = {
   alreadyRequiredContexts?: string[];
   unprotectedRepositories?: string[];
   openPullRequestCheckRuns?: Record<string, string[][]>;
+  dependabotPullRequests?: Record<string, DependabotPullRequestEntry[]>;
+  pullRequestListingFailureRepositories?: string[];
 };
 
 const runStepScripts = ({
@@ -328,6 +350,8 @@ const runStepScripts = ({
   alreadyRequiredContexts,
   unprotectedRepositories = [],
   openPullRequestCheckRuns = {},
+  dependabotPullRequests = {},
+  pullRequestListingFailureRepositories = [],
 }: StepRunRequest): StepRunResult => {
   const sandbox = fs.mkdtempSync(
     path.join(os.tmpdir(), 'repositories-management-workflow-'),
@@ -368,6 +392,14 @@ const runStepScripts = ({
     openPullRequestCheckRunsPath,
     JSON.stringify(openPullRequestCheckRuns),
   );
+  const dependabotPullRequestsPath = path.join(
+    sandbox,
+    'dependabot-pull-requests.json',
+  );
+  fs.writeFileSync(
+    dependabotPullRequestsPath,
+    JSON.stringify(dependabotPullRequests),
+  );
   const ghApiLogPath = path.join(sandbox, 'gh-api.log');
   fs.writeFileSync(ghApiLogPath, '');
   const helperPath = path.join(sandbox, 'gh_admin_api.sh');
@@ -390,12 +422,15 @@ const runStepScripts = ({
       STUB_GET_RESPONSE_BODY: getResponseBodyPath,
       STUB_PROTECTION_RESPONSE_BODY: protectionResponseBodyPath,
       STUB_OPEN_PULL_REQUEST_CHECK_RUNS_JSON: openPullRequestCheckRunsPath,
+      STUB_DEPENDABOT_PULL_REQUESTS_JSON: dependabotPullRequestsPath,
       STUB_GH_API_LOG: ghApiLogPath,
       STUB_ORGANIZATION_NAME: organizationName,
       STUB_PLAN_GATED_REPOSITORIES: planGatedRepositories.join(' '),
       STUB_UNPROTECTED_REPOSITORIES: unprotectedRepositories.join(' '),
       STUB_SERVER_ERROR_REPOSITORIES: serverErrorRepositories.join(' '),
       STUB_SERVER_ERROR_METHODS: serverErrorMethods.join(' '),
+      STUB_GH_PULLS_LISTING_FAILURE_REPOSITORIES:
+        pullRequestListingFailureRepositories.join(' '),
     },
   });
 
@@ -451,6 +486,8 @@ const branchProtectionStepName =
   'Update branch protection settings for all repositories';
 const rulesetStepName =
   'Create or update Copilot code review ruleset for all repositories';
+const dependabotSecurityUpdateDisablementStepName =
+  'Disable Dependabot security updates and close its pull requests for all repositories';
 
 const shellVariableAssignment = (
   stepName: string,
@@ -475,6 +512,12 @@ const repositoryUrl = (repositoryName: string): string =>
 
 const rulesetsUrl = (repositoryName: string): string =>
   `${repositoryUrl(repositoryName)}/rulesets`;
+
+const automatedSecurityFixesUrl = (repositoryName: string): string =>
+  `${repositoryUrl(repositoryName)}/automated-security-fixes`;
+
+const pullRequestUrl = (repositoryName: string, number: number): string =>
+  `${repositoryUrl(repositoryName)}/pulls/${number}`;
 
 const expectedMergeSettingsPayload = {
   delete_branch_on_merge: true,
@@ -1433,6 +1476,238 @@ describe('repository-config shares the fleet loop predicates with every loop', (
   });
 });
 
+describe('repository-config Dependabot security update disablement', () => {
+  const repositoryWithOpenDependabotPullRequests: RepositoryListEntry = {
+    name: 'repository-with-dependabot-prs',
+    isArchived: false,
+    isPrivate: false,
+    isFork: false,
+    defaultBranchRef: { name: 'main' },
+  };
+  const repositoryWithNoOpenDependabotPullRequests: RepositoryListEntry = {
+    name: 'repository-without-dependabot-prs',
+    isArchived: false,
+    isPrivate: false,
+    isFork: false,
+    defaultBranchRef: { name: 'main' },
+  };
+  const archivedRepositoryWithDependabotPullRequest: RepositoryListEntry = {
+    name: 'archived-repository-with-dependabot-pr',
+    isArchived: true,
+    isPrivate: false,
+    isFork: false,
+    defaultBranchRef: { name: 'main' },
+  };
+
+  test('disables security updates and closes every open Dependabot pull request for every non-archived repository, skipping archived ones and repositories with none open', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, dependabotSecurityUpdateDisablementStepName],
+      repositories: [
+        repositoryWithOpenDependabotPullRequests,
+        repositoryWithNoOpenDependabotPullRequests,
+        archivedRepositoryWithDependabotPullRequest,
+      ],
+      dependabotPullRequests: {
+        [repositoryWithOpenDependabotPullRequests.name]: [
+          { number: 41, login: 'dependabot[bot]' },
+          { number: 42, login: 'dependabot[bot]' },
+        ],
+        [archivedRepositoryWithDependabotPullRequest.name]: [
+          { number: 51, login: 'dependabot[bot]' },
+        ],
+      },
+    });
+    expect(
+      writeRequests(result).map((request) => ({
+        method: request.method,
+        url: request.url,
+      })),
+    ).toEqual([
+      {
+        method: 'DELETE',
+        url: automatedSecurityFixesUrl(
+          repositoryWithOpenDependabotPullRequests.name,
+        ),
+      },
+      {
+        method: 'PATCH',
+        url: pullRequestUrl(repositoryWithOpenDependabotPullRequests.name, 41),
+      },
+      {
+        method: 'PATCH',
+        url: pullRequestUrl(repositoryWithOpenDependabotPullRequests.name, 42),
+      },
+      {
+        method: 'DELETE',
+        url: automatedSecurityFixesUrl(
+          repositoryWithNoOpenDependabotPullRequests.name,
+        ),
+      },
+    ]);
+    for (const request of writeRequests(result).filter(
+      (request) => request.method === 'PATCH',
+    )) {
+      expect(requestPayload(request)).toEqual({ state: 'closed' });
+    }
+    expect(result.output).toContain(
+      'Configured 2 of 2 repositories for Dependabot security update disablement',
+    );
+  });
+
+  test('continues past a repository whose security-fixes disablement fails and fails the step afterwards, without attempting to close its pull requests', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, dependabotSecurityUpdateDisablementStepName],
+      repositories: [
+        repositoryWithOpenDependabotPullRequests,
+        repositoryWithNoOpenDependabotPullRequests,
+      ],
+      dependabotPullRequests: {
+        [repositoryWithOpenDependabotPullRequests.name]: [
+          { number: 41, login: 'dependabot[bot]' },
+        ],
+      },
+      serverErrorRepositories: [repositoryWithOpenDependabotPullRequests.name],
+      serverErrorMethods: ['DELETE'],
+    });
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'PATCH' &&
+          request.url ===
+            pullRequestUrl(repositoryWithOpenDependabotPullRequests.name, 41),
+      ),
+    ).toBe(false);
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'DELETE' &&
+          request.url ===
+            automatedSecurityFixesUrl(
+              repositoryWithNoOpenDependabotPullRequests.name,
+            ),
+      ),
+    ).toBe(true);
+    expect(result.output).toContain(
+      'Configured 1 of 2 repositories for Dependabot security update disablement',
+    );
+    expect(result.output).toContain(
+      `  - ${repositoryWithOpenDependabotPullRequests.name}`,
+    );
+  });
+
+  test('fails when the repository list resolves to zero repositories', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, dependabotSecurityUpdateDisablementStepName],
+      repositories: [],
+    });
+    expect(result.output).toContain(
+      'FATAL: the repository list for Dependabot security update disablement resolved to zero repositories, so this run configured nothing',
+    );
+    expect(result.requests).toEqual([]);
+  });
+
+  test('continues past a repository whose Dependabot pull request close fails and fails the step afterwards, having already disabled its security fixes', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, dependabotSecurityUpdateDisablementStepName],
+      repositories: [
+        repositoryWithOpenDependabotPullRequests,
+        repositoryWithNoOpenDependabotPullRequests,
+      ],
+      dependabotPullRequests: {
+        [repositoryWithOpenDependabotPullRequests.name]: [
+          { number: 41, login: 'dependabot[bot]' },
+        ],
+      },
+      serverErrorRepositories: [repositoryWithOpenDependabotPullRequests.name],
+      serverErrorMethods: ['PATCH'],
+    });
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'DELETE' &&
+          request.url ===
+            automatedSecurityFixesUrl(
+              repositoryWithOpenDependabotPullRequests.name,
+            ),
+      ),
+    ).toBe(true);
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'PATCH' &&
+          request.url ===
+            pullRequestUrl(repositoryWithOpenDependabotPullRequests.name, 41),
+      ),
+    ).toBe(true);
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'DELETE' &&
+          request.url ===
+            automatedSecurityFixesUrl(
+              repositoryWithNoOpenDependabotPullRequests.name,
+            ),
+      ),
+    ).toBe(true);
+    expect(result.output).toContain(
+      'Configured 1 of 2 repositories for Dependabot security update disablement',
+    );
+    expect(result.output).toContain(
+      `  - ${repositoryWithOpenDependabotPullRequests.name}`,
+    );
+  });
+
+  test('continues past a repository whose Dependabot pull request listing itself fails, without attempting to close any of its pull requests', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, dependabotSecurityUpdateDisablementStepName],
+      repositories: [
+        repositoryWithOpenDependabotPullRequests,
+        repositoryWithNoOpenDependabotPullRequests,
+      ],
+      dependabotPullRequests: {
+        [repositoryWithOpenDependabotPullRequests.name]: [
+          { number: 41, login: 'dependabot[bot]' },
+        ],
+      },
+      pullRequestListingFailureRepositories: [
+        repositoryWithOpenDependabotPullRequests.name,
+      ],
+    });
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'DELETE' &&
+          request.url ===
+            automatedSecurityFixesUrl(
+              repositoryWithOpenDependabotPullRequests.name,
+            ),
+      ),
+    ).toBe(true);
+    expect(
+      writeRequests(result).some((request) => request.method === 'PATCH'),
+    ).toBe(false);
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'DELETE' &&
+          request.url ===
+            automatedSecurityFixesUrl(
+              repositoryWithNoOpenDependabotPullRequests.name,
+            ),
+      ),
+    ).toBe(true);
+    expect(result.output).toContain(
+      `WARNING: failed to list Dependabot pull requests for ${repositoryWithOpenDependabotPullRequests.name}`,
+    );
+    expect(result.output).toContain(
+      'Configured 1 of 2 repositories for Dependabot security update disablement',
+    );
+    expect(result.output).toContain(
+      `  - ${repositoryWithOpenDependabotPullRequests.name}`,
+    );
+  });
+});
+
 const syncStepName = 'Sync Files to All repositories';
 const syncOrganizationName = 'example-org';
 const syncRepositoryName = 'example-repo';
@@ -1668,6 +1943,13 @@ describe('update-repos FILES_TO_SYNC', () => {
     const prettierIgnoreContent = fs.readFileSync(prettierIgnorePath, 'utf8');
     expect(prettierIgnoreContent).toContain('*.sh');
   });
+
+  test('.github/dependabot.yml is no longer listed in FILES_TO_SYNC', () => {
+    const { status, stdout } = runFilesToSyncArrayDeclaration();
+    expect(status).toBe(0);
+    const syncedFilePaths = stdout.split('\n').filter((line) => line !== '');
+    expect(syncedFilePaths).not.toContain('.github/dependabot.yml');
+  });
 });
 
 const REPO_ROOT = path.join(__dirname, '../../..');
@@ -1774,6 +2056,12 @@ describe('update-repos legacy workflow file removal', () => {
     ).toBe(false);
   });
 
+  test('removes the retired .github/dependabot.yml file from every synced repository', () => {
+    expect(
+      remainsAfterLegacyWorkflowFileRemoval('.github/dependabot.yml'),
+    ).toBe(false);
+  });
+
   test('removes the retired empty-format-test-job.yml workflow file when its content exactly matches the retired placeholder', () => {
     expect(
       remainsAfterLegacyWorkflowFileRemoval(
@@ -1804,6 +2092,7 @@ describe('update-repos legacy workflow file removal', () => {
     '.github/workflows/assign-all-cards-to-owner.yml',
     '.github/workflows/assign-all-card-to-owner.yml',
     '.github/workflows/empty-format-test-job.yml',
+    '.github/dependabot.yml',
   ])(
     'exits successfully and leaves %s absent when it was never present in the synced repository',
     (syncedRepositoryRelativeFilePath) => {

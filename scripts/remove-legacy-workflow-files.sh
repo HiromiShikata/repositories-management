@@ -15,6 +15,8 @@ FILE=".github/workflows/assign-all-cards-to-owner.yml"
 rm -f "$REPO_DIRECTORY/$FILE"
 FILE=".github/workflows/assign-all-card-to-owner.yml"
 rm -f "$REPO_DIRECTORY/$FILE"
+FILE=".github/dependabot.yml"
+rm -f "$REPO_DIRECTORY/$FILE"
 FILE=".github/workflows/empty-format-test-job.yml"
 if [ -f "$REPO_DIRECTORY/$FILE" ] && cmp -s "$REPO_DIRECTORY/$FILE" "$RETIRED_EMPTY_FORMAT_TEST_JOB_REFERENCE"; then
   rm -f "$REPO_DIRECTORY/$FILE"
