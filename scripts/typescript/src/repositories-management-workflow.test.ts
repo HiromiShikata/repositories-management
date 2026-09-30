@@ -488,6 +488,8 @@ const rulesetStepName =
   'Create or update Copilot code review ruleset for all repositories';
 const dependabotSecurityUpdateDisablementStepName =
   'Disable Dependabot security updates and close its pull requests for all repositories';
+const renovatePullRequestClosureStepName =
+  'Close Renovate pull requests for all repositories';
 
 const shellVariableAssignment = (
   stepName: string,
@@ -1704,6 +1706,155 @@ describe('repository-config Dependabot security update disablement', () => {
     );
     expect(result.output).toContain(
       `  - ${repositoryWithOpenDependabotPullRequests.name}`,
+    );
+  });
+});
+
+describe('repository-config Renovate pull request closure', () => {
+  const repositoryWithOpenRenovatePullRequests: RepositoryListEntry = {
+    name: 'repository-with-renovate-prs',
+    isArchived: false,
+    isPrivate: false,
+    isFork: false,
+    defaultBranchRef: { name: 'main' },
+  };
+  const repositoryWithNoOpenRenovatePullRequests: RepositoryListEntry = {
+    name: 'repository-without-renovate-prs',
+    isArchived: false,
+    isPrivate: false,
+    isFork: false,
+    defaultBranchRef: { name: 'main' },
+  };
+  const archivedRepositoryWithRenovatePullRequest: RepositoryListEntry = {
+    name: 'archived-repository-with-renovate-pr',
+    isArchived: true,
+    isPrivate: false,
+    isFork: false,
+    defaultBranchRef: { name: 'main' },
+  };
+
+  test('closes every open Renovate pull request directly via the API for every non-archived repository, skipping archived ones, repositories with none open, and issuing no Dependabot-only security-fixes call', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, renovatePullRequestClosureStepName],
+      repositories: [
+        repositoryWithOpenRenovatePullRequests,
+        repositoryWithNoOpenRenovatePullRequests,
+        archivedRepositoryWithRenovatePullRequest,
+      ],
+      dependabotPullRequests: {
+        [repositoryWithOpenRenovatePullRequests.name]: [
+          { number: 61, login: 'renovate[bot]' },
+          { number: 62, login: 'renovate[bot]' },
+        ],
+        [archivedRepositoryWithRenovatePullRequest.name]: [
+          { number: 71, login: 'renovate[bot]' },
+        ],
+      },
+    });
+    expect(
+      writeRequests(result).map((request) => ({
+        method: request.method,
+        url: request.url,
+      })),
+    ).toEqual([
+      {
+        method: 'PATCH',
+        url: pullRequestUrl(repositoryWithOpenRenovatePullRequests.name, 61),
+      },
+      {
+        method: 'PATCH',
+        url: pullRequestUrl(repositoryWithOpenRenovatePullRequests.name, 62),
+      },
+    ]);
+    for (const request of writeRequests(result)) {
+      expect(requestPayload(request)).toEqual({ state: 'closed' });
+    }
+    expect(result.output).toContain(
+      'Configured 2 of 2 repositories for closing open Renovate pull requests',
+    );
+  });
+
+  test('counts a repository with no open Renovate pull request as successfully processed, issuing no request for it', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, renovatePullRequestClosureStepName],
+      repositories: [repositoryWithNoOpenRenovatePullRequests],
+      dependabotPullRequests: {},
+    });
+    expect(writeRequests(result)).toEqual([]);
+    expect(result.output).toContain(
+      'Configured 1 of 1 repositories for closing open Renovate pull requests',
+    );
+  });
+
+  test('fails when the repository list resolves to zero repositories', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, renovatePullRequestClosureStepName],
+      repositories: [],
+    });
+    expect(result.output).toContain(
+      'FATAL: the repository list for closing open Renovate pull requests resolved to zero repositories, so this run configured nothing',
+    );
+    expect(result.requests).toEqual([]);
+  });
+
+  test('continues past a repository whose Renovate pull request listing itself fails, without attempting to close any of its pull requests', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, renovatePullRequestClosureStepName],
+      repositories: [
+        repositoryWithOpenRenovatePullRequests,
+        repositoryWithNoOpenRenovatePullRequests,
+      ],
+      dependabotPullRequests: {
+        [repositoryWithOpenRenovatePullRequests.name]: [
+          { number: 61, login: 'renovate[bot]' },
+        ],
+      },
+      pullRequestListingFailureRepositories: [
+        repositoryWithOpenRenovatePullRequests.name,
+      ],
+    });
+    expect(
+      writeRequests(result).some((request) => request.method === 'PATCH'),
+    ).toBe(false);
+    expect(result.output).toContain(
+      `WARNING: failed to list Renovate pull requests for ${repositoryWithOpenRenovatePullRequests.name}`,
+    );
+    expect(result.output).toContain(
+      'Configured 1 of 2 repositories for closing open Renovate pull requests',
+    );
+    expect(result.output).toContain(
+      `  - ${repositoryWithOpenRenovatePullRequests.name}`,
+    );
+  });
+
+  test('continues past a repository whose Renovate pull request close fails and fails the step afterwards, while still closing pull requests for the remaining repository', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, renovatePullRequestClosureStepName],
+      repositories: [
+        repositoryWithOpenRenovatePullRequests,
+        repositoryWithNoOpenRenovatePullRequests,
+      ],
+      dependabotPullRequests: {
+        [repositoryWithOpenRenovatePullRequests.name]: [
+          { number: 61, login: 'renovate[bot]' },
+        ],
+      },
+      serverErrorRepositories: [repositoryWithOpenRenovatePullRequests.name],
+      serverErrorMethods: ['PATCH'],
+    });
+    expect(
+      writeRequests(result).some(
+        (request) =>
+          request.method === 'PATCH' &&
+          request.url ===
+            pullRequestUrl(repositoryWithOpenRenovatePullRequests.name, 61),
+      ),
+    ).toBe(true);
+    expect(result.output).toContain(
+      'Configured 1 of 2 repositories for closing open Renovate pull requests',
+    );
+    expect(result.output).toContain(
+      `  - ${repositoryWithOpenRenovatePullRequests.name}`,
     );
   });
 });
