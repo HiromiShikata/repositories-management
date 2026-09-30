@@ -109,129 +109,6 @@ const runClearNextActionDateStep = (
   }
 };
 
-const workflowExpressionValues = (action: string): Record<string, string> => ({
-  'github.event.pull_request.node_id || github.event.issue.node_id':
-    'I_stubResourceNodeId',
-  'env.project_v2_id': 'PVT_stubProjectId',
-  'env.awaiting_workspace': 'Awaiting Workspace',
-  'github.event.action': action,
-});
-
-const moveToAwaitingWorkspaceRunScript = (
-  workflowContent: string,
-  action: string,
-): string => {
-  const lines = workflowContent.split('\n');
-  const stepLineIndex = lines.findIndex((line) =>
-    line.includes('- name: Move issue to'),
-  );
-  const runLineIndex = lines.findIndex(
-    (line, index) => index > stepLineIndex && line.trim() === 'run: |',
-  );
-  const bodyIndent = lines[runLineIndex].indexOf('run:') + 2;
-  const bodyLines: string[] = [];
-  for (let index = runLineIndex + 1; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (line.trim() !== '' && !line.startsWith(' '.repeat(bodyIndent))) {
-      break;
-    }
-    bodyLines.push(line.slice(bodyIndent));
-  }
-  const values = workflowExpressionValues(action);
-  return bodyLines
-    .join('\n')
-    .replace(/\$\{\{([^}]*)\}\}/g, (_match: string, inner: string): string => {
-      const expression = inner.trim();
-      const value = values[expression];
-      if (value === undefined) {
-        throw new Error(`Unhandled workflow expression: ${expression}`);
-      }
-      return value;
-    });
-};
-
-const githubCliStub = `#!/bin/bash
-INVOCATION="$*"
-JQ_FILTER=""
-PREVIOUS_ARGUMENT=""
-for ARGUMENT in "$@"; do
-  if [ "$PREVIOUS_ARGUMENT" = "--jq" ]; then
-    JQ_FILTER="$ARGUMENT"
-  fi
-  PREVIOUS_ARGUMENT="$ARGUMENT"
-done
-
-emit() {
-  if [ -n "$JQ_FILTER" ]; then
-    printf '%s' "$1" | jq -r "$JQ_FILTER"
-  else
-    printf '%s\\n' "$1"
-  fi
-}
-
-case "$INVOCATION" in
-  *addProjectV2ItemById*)
-    emit "{\\"data\\":{\\"addProjectV2ItemById\\":{\\"item\\":{\\"id\\":\\"$STUB_ITEM_ID\\"}}}}"
-    ;;
-  *fieldValueByName*)
-    if [ -n "$STUB_EXISTING_STATUS" ]; then
-      emit "{\\"data\\":{\\"node\\":{\\"fieldValueByName\\":{\\"name\\":\\"$STUB_EXISTING_STATUS\\"}}}}"
-    else
-      emit '{"data":{"node":{"fieldValueByName":null}}}'
-    fi
-    ;;
-  *updateProjectV2ItemFieldValue*)
-    printf '%s\\n' "$INVOCATION" >> "$STUB_STATUS_WRITE_LOG"
-    emit "{\\"data\\":{\\"updateProjectV2ItemFieldValue\\":{\\"projectV2Item\\":{\\"id\\":\\"$STUB_ITEM_ID\\"}}}}"
-    ;;
-  *)
-    printf 'unexpected gh invocation: %s\\n' "$INVOCATION" >&2
-    exit 1
-    ;;
-esac
-`;
-
-const runMoveToAwaitingWorkspaceStep = (
-  workflowContent: string,
-  action: string,
-  existingStatus: string,
-): { exitCode: number | null; stderr: string; statusWrites: string[] } => {
-  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'umino-project-'));
-  try {
-    const stubDirectory = path.join(sandbox, 'bin');
-    fs.mkdirSync(stubDirectory);
-    const stubPath = path.join(stubDirectory, 'gh');
-    fs.writeFileSync(stubPath, githubCliStub, { mode: 0o755 });
-    const scriptPath = path.join(sandbox, 'step.sh');
-    fs.writeFileSync(
-      scriptPath,
-      moveToAwaitingWorkspaceRunScript(workflowContent, action),
-    );
-    const statusWriteLog = path.join(sandbox, 'status-writes.log');
-    fs.writeFileSync(statusWriteLog, '');
-    const result = spawnSync('bash', ['-e', scriptPath], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PATH: `${stubDirectory}:${process.env.PATH ?? ''}`,
-        STUB_ITEM_ID: 'PVTI_stubItemId',
-        STUB_EXISTING_STATUS: existingStatus,
-        STUB_STATUS_WRITE_LOG: statusWriteLog,
-      },
-    });
-    return {
-      exitCode: result.status,
-      stderr: result.stderr,
-      statusWrites: fs
-        .readFileSync(statusWriteLog, 'utf8')
-        .split('\n')
-        .filter((line) => line !== ''),
-    };
-  } finally {
-    fs.rmSync(sandbox, { recursive: true, force: true });
-  }
-};
-
 type SimulatedGithubEvent = {
   eventName: string;
   issueState: string | null;
@@ -746,78 +623,6 @@ describe('umino-project.yml workflow', () => {
     });
   });
 
-  describe('move-to-awaiting-workspace step behaviour', () => {
-    const awaitingWorkspaceOptionIdMatch = workflowContent.match(
-      /-f optionId="([^"]+)"/,
-    );
-    const awaitingWorkspaceOptionId =
-      awaitingWorkspaceOptionIdMatch === null
-        ? ''
-        : awaitingWorkspaceOptionIdMatch[1];
-
-    test('the workflow declares the Awaiting Workspace option id the step writes', () => {
-      const result = runMoveToAwaitingWorkspaceStep(
-        workflowContent,
-        'opened',
-        '',
-      );
-
-      expect(result.stderr).toBe('');
-      expect(result.exitCode).toBe(0);
-      expect(result.statusWrites).toHaveLength(1);
-
-      const writtenOptionIdMatch =
-        result.statusWrites[0].match(/optionId=(\S+)/);
-      const writtenOptionId =
-        writtenOptionIdMatch === null ? '' : writtenOptionIdMatch[1];
-
-      expect(writtenOptionId).not.toBe('');
-      expect(writtenOptionId).toBe(awaitingWorkspaceOptionId);
-    });
-
-    test('keeps a Status that was already set on a newly opened item', () => {
-      const result = runMoveToAwaitingWorkspaceStep(
-        workflowContent,
-        'opened',
-        'In Tmux by agent',
-      );
-
-      expect(result.stderr).toBe('');
-      expect(result.exitCode).toBe(0);
-      expect(result.statusWrites).toEqual([]);
-    });
-
-    test('writes Awaiting Workspace on a newly opened item that has no Status yet', () => {
-      const result = runMoveToAwaitingWorkspaceStep(
-        workflowContent,
-        'opened',
-        '',
-      );
-
-      expect(result.stderr).toBe('');
-      expect(result.exitCode).toBe(0);
-      expect(result.statusWrites).toHaveLength(1);
-      expect(result.statusWrites[0]).toContain(
-        `optionId=${awaitingWorkspaceOptionId}`,
-      );
-    });
-
-    test('writes Awaiting Workspace on a reopened item even when it already has a Status', () => {
-      const result = runMoveToAwaitingWorkspaceStep(
-        workflowContent,
-        'reopened',
-        'Done',
-      );
-
-      expect(result.stderr).toBe('');
-      expect(result.exitCode).toBe(0);
-      expect(result.statusWrites).toHaveLength(1);
-      expect(result.statusWrites[0]).toContain(
-        `optionId=${awaitingWorkspaceOptionId}`,
-      );
-    });
-  });
-
   describe('move-to-awaiting-workspace step if-condition evaluation for pull_request vs issues events (Step A criterion)', () => {
     const moveToAwaitingWorkspaceIfCondition = extractIfConditionText(
       extractStepBlockText(
@@ -855,7 +660,7 @@ describe('umino-project.yml workflow', () => {
       expect(conditionResult).toBe(false);
     });
 
-    test('still fires for a newly opened issues event, so addProjectV2ItemById is still invoked and Status is still written', () => {
+    test('still fires for a newly opened issues event', () => {
       const conditionResult = evaluateIfConditionForSimulatedEvent(
         moveToAwaitingWorkspaceIfCondition,
         {
@@ -867,18 +672,9 @@ describe('umino-project.yml workflow', () => {
       );
 
       expect(conditionResult).toBe(true);
-
-      const result = runMoveToAwaitingWorkspaceStep(
-        workflowContent,
-        'opened',
-        '',
-      );
-      expect(result.stderr).toBe('');
-      expect(result.exitCode).toBe(0);
-      expect(result.statusWrites).toHaveLength(1);
     });
 
-    test('still fires for a reopened issues event, so addProjectV2ItemById is still invoked and Status is still written', () => {
+    test('still fires for a reopened issues event', () => {
       const conditionResult = evaluateIfConditionForSimulatedEvent(
         moveToAwaitingWorkspaceIfCondition,
         {
@@ -890,15 +686,69 @@ describe('umino-project.yml workflow', () => {
       );
 
       expect(conditionResult).toBe(true);
+    });
+  });
 
-      const result = runMoveToAwaitingWorkspaceStep(
-        workflowContent,
-        'reopened',
-        'Done',
+  describe('move-to-awaiting-workspace step invocation wiring', () => {
+    const scriptsTypescriptDir = path.join(__dirname, '..');
+
+    const extractAddProjectBoardItemCommand = (): string => {
+      const lines = workflowContent.split('\n');
+      const stepLineIndex = lines.findIndex((line) =>
+        line.includes('- name: Move issue to'),
       );
-      expect(result.stderr).toBe('');
-      expect(result.exitCode).toBe(0);
-      expect(result.statusWrites).toHaveLength(1);
+      const runLineIndex = lines.findIndex(
+        (line, index) => index > stepLineIndex && line.trim() === 'run: |',
+      );
+      if (stepLineIndex === -1 || runLineIndex === -1) {
+        throw new Error(
+          'Could not find run block in the Move issue to... step',
+        );
+      }
+      const bodyIndent = lines[runLineIndex].indexOf('run:') + 2;
+      const bodyLines: string[] = [];
+      for (let index = runLineIndex + 1; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (line.trim() !== '' && !line.startsWith(' '.repeat(bodyIndent))) {
+          break;
+        }
+        bodyLines.push(line.trim());
+      }
+      const commandSegments = bodyLines
+        .flatMap((line) => line.split('&&'))
+        .map((segment) => segment.trim())
+        .filter((segment) => segment !== '');
+      const invokeCommand = commandSegments.find((segment) =>
+        segment.includes('add-project-board-item.ts'),
+      );
+      if (!invokeCommand) {
+        throw new Error(
+          'Could not find add-project-board-item.ts invocation in the Move issue to... step run block',
+        );
+      }
+      return invokeCommand;
+    };
+
+    test('the run block resolves and invokes add-project-board-item.ts, reaching its own env validation rather than failing to resolve the script', () => {
+      const command = extractAddProjectBoardItemCommand();
+      const result = spawnSync(
+        'bash',
+        ['--noprofile', '--norc', '-c', command],
+        {
+          encoding: 'utf8',
+          cwd: scriptsTypescriptDir,
+          env: {
+            PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+            HOME: process.env.HOME ?? '/root',
+          },
+        },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).not.toContain('ERR_MODULE_NOT_FOUND');
+      expect(result.stderr).toContain(
+        'GH_TOKEN environment variable is not set',
+      );
     });
   });
 
