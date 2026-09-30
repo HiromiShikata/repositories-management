@@ -1706,6 +1706,39 @@ describe('repository-config Dependabot security update disablement', () => {
       `  - ${repositoryWithOpenDependabotPullRequests.name}`,
     );
   });
+
+  test('the Dependabot security update disablement exception list names exactly the documented repositories', () => {
+    expect(
+      shellVariableAssignment(
+        dependabotSecurityUpdateDisablementStepName,
+        'ADMIN_API_FORBIDDEN_REPOSITORIES',
+      ),
+    ).toBe('aburakayaz-apollo aburakayaz-artemis aburakayaz-artemis-data');
+  });
+
+  test('an admin-api-forbidden repository is expected-skip in the Dependabot security update disablement step while the rest of the fleet is configured', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, dependabotSecurityUpdateDisablementStepName],
+      repositories: [adminApiForbiddenRepository, mainDefaultBranchRepository],
+    });
+    expect(result.output).toContain(
+      `EXPECTED SKIP: ${adminApiForbiddenRepository.name} is excluded from Dependabot security update disablement because the admin API permanently refuses these operations for it`,
+    );
+    expect(
+      writeRequests(result).map((request) => ({
+        method: request.method,
+        url: request.url,
+      })),
+    ).toEqual([
+      {
+        method: 'DELETE',
+        url: automatedSecurityFixesUrl(mainDefaultBranchRepository.name),
+      },
+    ]);
+    expect(result.output).toContain(
+      'Configured 1 of 2 repositories for Dependabot security update disablement',
+    );
+  });
 });
 
 const syncStepName = 'Sync Files to All repositories';
