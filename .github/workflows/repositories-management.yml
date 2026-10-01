@@ -592,3 +592,34 @@ jobs:
             sleep 5s
           done
           report_fleet_loop_outcome "Dependabot security update disablement" "$CONFIGURED_COUNT" "$CONSIDERED_COUNT" "$FAILED_REPOS" || exit 1
+      - name: Close Renovate pull requests for all repositories
+        if: ${{ !cancelled() }}
+        run: |
+          source /tmp/gh_admin_api.sh
+          ORG_NAME="${{ env.ORG_NAME }}"
+          REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
+          FAILED_REPOS=""
+          CONSIDERED_COUNT=0
+          CONFIGURED_COUNT=0
+          for REPO in $REPO_LIST; do
+            [ -z "$REPO" ] && continue
+            CONSIDERED_COUNT=$((CONSIDERED_COUNT + 1))
+            RENOVATE_PULL_REQUEST_NUMBERS=$(gh api "repos/$ORG_NAME/$REPO/pulls?state=open&per_page=100" --jq '.[] | select(.user.login == "renovate[bot]") | .number') || { echo "WARNING: failed to list Renovate pull requests for $REPO; continuing with the remaining repositories"; FAILED_REPOS="$FAILED_REPOS $REPO"; sleep 5s; continue; }
+            REPOSITORY_PULL_REQUEST_CLOSE_FAILED="false"
+            for PR_NUMBER in $RENOVATE_PULL_REQUEST_NUMBERS; do
+              gh_admin_api PATCH "https://api.github.com/repos/$ORG_NAME/$REPO/pulls/$PR_NUMBER" '{"state":"closed"}' "200" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+              if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
+                REPOSITORY_PULL_REQUEST_CLOSE_FAILED="true"
+              fi
+            done
+            if [ "$REPOSITORY_PULL_REQUEST_CLOSE_FAILED" = "true" ]; then
+              echo "WARNING: failed to close every Renovate pull request for $REPO; continuing with the remaining repositories"
+              FAILED_REPOS="$FAILED_REPOS $REPO"
+              sleep 5s
+              continue
+            fi
+            echo "Renovate pull requests closed for $REPO"
+            CONFIGURED_COUNT=$((CONFIGURED_COUNT + 1))
+            sleep 5s
+          done
+          report_fleet_loop_outcome "closing open Renovate pull requests" "$CONFIGURED_COUNT" "$CONSIDERED_COUNT" "$FAILED_REPOS" || exit 1
