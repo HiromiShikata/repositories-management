@@ -283,6 +283,23 @@ describe('Lint commits step range end fallback when no pull request head sha is 
       removeFixture(fixture);
     }
   });
+
+  test('ends the linted range at HEAD when PR_HEAD_SHA does not correspond to an existing commit object', () => {
+    const fixture = createPullRequestMergeRefFixture();
+    try {
+      const result = runLintCommitsStep({
+        cwd: fixture.sandboxDir,
+        eventAction: 'synchronize',
+        eventBefore: fixture.previousPushHeadCommit,
+        defaultBranchRef: defaultBranchRefSentinel,
+        pullRequestHeadSha: neverCommittedSha,
+      });
+      expect(result.status).toBe(0);
+      expect(argumentValue(result.commitlintArguments, '--to=')).toBe('HEAD');
+    } finally {
+      removeFixture(fixture);
+    }
+  });
 });
 
 type FromRefScenario = {
