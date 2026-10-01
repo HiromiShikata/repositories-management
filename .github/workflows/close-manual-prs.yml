@@ -39,11 +39,10 @@ jobs:
           PR_ACTOR_LOGIN: ${{ github.event.pull_request.user.login }}
           PR_ACTOR_TYPE: ${{ github.event.pull_request.user.type }}
         run: |
-          ALLOWED_LOGINS="hs-bot-gh-app[bot] dependabot[bot] renovate[bot] github-actions[bot]"
+          ALLOWED_LOGINS="hs-bot-gh-app[bot] github-actions[bot]"
 
           is_manual_pr() {
             local login="$1" type="$2"
-            [ "$type" = "Bot" ] && return 1
             for allowed in $ALLOWED_LOGINS; do
               [ "$login" = "$allowed" ] && return 1
             done
