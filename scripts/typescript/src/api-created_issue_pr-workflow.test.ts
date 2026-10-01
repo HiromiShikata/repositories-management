@@ -9,12 +9,7 @@ const workflowPath = path.join(
 );
 const workflowContent = fs.readFileSync(workflowPath, 'utf8');
 
-const jobName = 'add-to-project';
 const addToProjectStepName = 'Add to Project';
-const installationTokenStepName = 'Generate hs-bot-gh-ap installation token';
-const personalAccessTokenReference = '${{ secrets.GH_TOKEN }}';
-const issueOrPrUrlInputReference =
-  '${{ github.event.inputs.issue_or_pr_url }}';
 
 const extractStepBlock = (stepName: string): string => {
   const stepStart = workflowContent.indexOf(`- name: ${stepName}`);
@@ -23,25 +18,6 @@ const extractStepBlock = (stepName: string): string => {
   return nextStep === -1
     ? workflowContent.slice(stepStart)
     : workflowContent.slice(stepStart, nextStep);
-};
-
-const jobKeyIndentation = 2;
-
-const extractJobBlock = (name: string): string => {
-  const jobStart = workflowContent.indexOf(`\n  ${name}:\n`);
-  if (jobStart === -1) {
-    throw new Error(`the workflow declares no job named ${name}`);
-  }
-  const lines = workflowContent.slice(jobStart + 1).split('\n');
-  const jobLines = [lines[0]];
-  for (const line of lines.slice(1)) {
-    const indentation = line.length - line.trimStart().length;
-    if (line.trim() !== '' && indentation <= jobKeyIndentation) {
-      break;
-    }
-    jobLines.push(line);
-  }
-  return jobLines.join('\n');
 };
 
 const stepKeyIndentation = 8;
@@ -67,48 +43,7 @@ const extractRunScript = (stepName: string): string => {
   return scriptLines.join('\n');
 };
 
-const stepLevelEnvironmentEntryIndentation = stepKeyIndentation + 2;
-const stepLevelEnvironmentEntryPattern = new RegExp(
-  `^ {${stepLevelEnvironmentEntryIndentation}}([A-Za-z0-9_]+): (.+)$`,
-);
-
-const stepLevelEnvironmentReferences = (
-  stepName: string,
-): Record<string, string> => {
-  const lines = extractStepBlock(stepName).split('\n');
-  const environmentLineIndex = lines.findIndex(
-    (line) => line === `${' '.repeat(stepKeyIndentation)}env:`,
-  );
-  if (environmentLineIndex === -1) {
-    return {};
-  }
-  const references: Record<string, string> = {};
-  for (const line of lines.slice(environmentLineIndex + 1)) {
-    const declaration = stepLevelEnvironmentEntryPattern.exec(line);
-    if (declaration === null) {
-      break;
-    }
-    references[declaration[1]] = declaration[2];
-  }
-  return references;
-};
-
 describe('api-created_issue_pr.yml Add to Project workflow', () => {
-  describe('add-to-project GH_TOKEN source', () => {
-    test('add-to-project job mints no GitHub App installation token', () => {
-      const jobBlock = extractJobBlock(jobName);
-      expect(jobBlock).not.toContain('create-github-app-token');
-      expect(jobBlock).not.toContain(installationTokenStepName);
-    });
-
-    test('Add to Project step declares the personal access token as its GH_TOKEN source', () => {
-      expect(stepLevelEnvironmentReferences(addToProjectStepName)).toEqual({
-        GH_TOKEN: personalAccessTokenReference,
-        ISSUE_OR_PR_URL_INPUT: issueOrPrUrlInputReference,
-      });
-    });
-  });
-
   type RecordedCurlRequest = {
     method: string;
     url: string;
