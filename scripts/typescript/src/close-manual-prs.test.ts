@@ -143,6 +143,12 @@ const allowedLoginsCases: AllowedLoginsCase[] = [
     actorType: 'Bot',
     expectClosed: false,
   },
+  {
+    name: 'some-other-bot[bot]',
+    actorLogin: 'some-other-bot[bot]',
+    actorType: 'Bot',
+    expectClosed: false,
+  },
 ];
 
 describe('close-manual-prs.yml ALLOWED_LOGINS criteria', () => {
