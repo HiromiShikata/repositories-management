@@ -79,11 +79,6 @@ type PullRequestMergeRefFixture = {
   syntheticMergeCommit: string;
 };
 
-// Reproduces the structural shape of GitHub's refs/pull/<n>/merge synthetic
-// commit documented in https://github.com/HiromiShikata/repositories-management/issues/701 :
-// a common ancestor, a base-tip branch that advanced with a foreign commit,
-// and a pull-request-head branch, joined by a merge commit whose first parent
-// is the base tip and whose second parent is the pull request head.
 const createPullRequestMergeRefFixture = (): PullRequestMergeRefFixture => {
   const sandboxDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'commit-lint-workflow-fixture-'),
