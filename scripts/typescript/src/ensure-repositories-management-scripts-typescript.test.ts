@@ -157,31 +157,50 @@ describe('ensure-repositories-management-scripts-typescript.sh', () => {
 
 describe('ensure-repositories-management-scripts-typescript.sh clone fallback against the real GitHub API', () => {
   test('gh repo clone HiromiShikata/repositories-management retrieves a repository that itself carries scripts/ensure-repositories-management-scripts-typescript.sh, from the ref this test itself runs on', () => {
-    const ref =
-      process.env.GITHUB_HEAD_REF ||
-      execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-        encoding: 'utf8',
-      }).trim();
+    const headCommitSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+    }).trim();
+    const localBranchName = execFileSync(
+      'git',
+      ['branch', '--show-current'],
+      { encoding: 'utf8' },
+    ).trim();
+    const ref = process.env.GITHUB_HEAD_REF || localBranchName;
     const cloneDir = makeSandboxDir('ensure-scripts-typescript-live-clone-');
 
-    const result = spawnSync(
-      'gh',
-      [
-        'repo',
-        'clone',
-        'HiromiShikata/repositories-management',
-        cloneDir,
-        '--',
-        '--depth',
-        '1',
-        '--quiet',
-        '--branch',
-        ref,
-      ],
-      { encoding: 'utf8' },
-    );
+    const cloneArgs = [
+      'repo',
+      'clone',
+      'HiromiShikata/repositories-management',
+      cloneDir,
+      '--',
+      '--depth',
+      '1',
+      '--quiet',
+    ];
+    if (ref) {
+      cloneArgs.push('--branch', ref);
+    }
 
-    expect(result.status).toBe(0);
+    const cloneResult = spawnSync('gh', cloneArgs, { encoding: 'utf8' });
+    expect(cloneResult.status).toBe(0);
+
+    if (!ref) {
+      const fetchExactCommitResult = spawnSync(
+        'git',
+        ['-C', cloneDir, 'fetch', '--depth', '1', 'origin', headCommitSha],
+        { encoding: 'utf8' },
+      );
+      expect(fetchExactCommitResult.status).toBe(0);
+
+      const checkoutExactCommitResult = spawnSync(
+        'git',
+        ['-C', cloneDir, 'checkout', 'FETCH_HEAD'],
+        { encoding: 'utf8' },
+      );
+      expect(checkoutExactCommitResult.status).toBe(0);
+    }
+
     expect(
       fs.existsSync(
         path.join(
