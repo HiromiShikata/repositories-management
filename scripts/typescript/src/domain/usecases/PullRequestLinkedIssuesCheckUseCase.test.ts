@@ -3,6 +3,7 @@ import {
   isExcludedHeadRef,
   NO_LINKED_ISSUES_FOUND_MESSAGE,
   extractClosingKeywordIssueReferences,
+  extractRelatesToKeywordIssueReferences,
   PullRequestLinkedIssuesCheckResult,
   PullRequestLinkedIssuesCheckUseCase,
 } from './PullRequestLinkedIssuesCheckUseCase';
@@ -119,6 +120,70 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
         issueKey('external-org-b', 'repo-b', 222),
       ],
       expected: { kind: 'success', linkedIssueCount: 2 },
+    },
+    {
+      name: 'Relates to #N same-repository reference to an existing issue succeeds',
+      pullRequestBody: 'Relates to #50',
+      existingIssueKeys: [
+        issueKey(SAME_REPOSITORY_OWNER, SAME_REPOSITORY_NAME, 50),
+      ],
+      expected: { kind: 'success', linkedIssueCount: 1 },
+    },
+    {
+      name: 'Relates to #N same-repository reference to a non-existent issue fails',
+      pullRequestBody: 'Relates to #51',
+      existingIssueKeys: [],
+      expected: { kind: 'failure', message: NO_LINKED_ISSUES_FOUND_MESSAGE },
+    },
+    {
+      name: 'Relates to owner/repo#N same-account different-repository reference to an existing issue succeeds',
+      pullRequestBody: 'Relates to HiromiShikata/other-repo#9',
+      existingIssueKeys: [issueKey('HiromiShikata', 'other-repo', 9)],
+      expected: { kind: 'success', linkedIssueCount: 1 },
+    },
+    {
+      name: 'Relates to owner/repo#N same-account different-repository reference to a non-existent issue fails',
+      pullRequestBody: 'Relates to HiromiShikata/other-repo#10',
+      existingIssueKeys: [],
+      expected: { kind: 'failure', message: NO_LINKED_ISSUES_FOUND_MESSAGE },
+    },
+    {
+      name: 'Relates to full-URL cross-organization reference succeeds without an existence check',
+      pullRequestBody:
+        'Relates to https://github.com/external-org/external-repo/issues/123',
+      existingIssueKeys: [],
+      expected: { kind: 'success', linkedIssueCount: 1 },
+    },
+    {
+      name: 'uppercase "RELATES TO #N" keyword is recognized identically to lower case',
+      pullRequestBody: 'RELATES TO #52',
+      existingIssueKeys: [
+        issueKey(SAME_REPOSITORY_OWNER, SAME_REPOSITORY_NAME, 52),
+      ],
+      expected: { kind: 'success', linkedIssueCount: 1 },
+    },
+    {
+      name: 'mixed-case "Relates To #N" keyword is recognized identically to lower case',
+      pullRequestBody: 'Relates To #53',
+      existingIssueKeys: [
+        issueKey(SAME_REPOSITORY_OWNER, SAME_REPOSITORY_NAME, 53),
+      ],
+      expected: { kind: 'success', linkedIssueCount: 1 },
+    },
+    {
+      name: 'a body with both a closing-keyword reference and a Relates to reference counts both',
+      pullRequestBody:
+        'Closes #42 and Relates to https://github.com/external-org/external-repo/issues/99',
+      existingIssueKeys: [
+        issueKey(SAME_REPOSITORY_OWNER, SAME_REPOSITORY_NAME, 42),
+      ],
+      expected: { kind: 'success', linkedIssueCount: 2 },
+    },
+    {
+      name: 'a bare reference with no recognized keyword (closing or Relates to) before it still fails',
+      pullRequestBody: 'See #60 for context.',
+      existingIssueKeys: [],
+      expected: { kind: 'failure', message: NO_LINKED_ISSUES_FOUND_MESSAGE },
     },
   ];
 
@@ -314,6 +379,66 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
     test('a reference with no closing keyword immediately before it is not counted', () => {
       const extracted = extractClosingKeywordIssueReferences(
         'See #123 for context.',
+        SAME_REPOSITORY_OWNER,
+        SAME_REPOSITORY_NAME,
+      );
+
+      expect(extracted).toEqual([]);
+    });
+  });
+
+  describe('relates to keyword recognition', () => {
+    const relatesToCaseVariants = [
+      'relates to',
+      'Relates to',
+      'RELATES TO',
+      'Relates To',
+    ];
+
+    test.each(relatesToCaseVariants)(
+      'the keyword variant "%s" is recognized case-insensitively',
+      (keywordVariant) => {
+        const extracted = extractRelatesToKeywordIssueReferences(
+          `${keywordVariant} #7`,
+          SAME_REPOSITORY_OWNER,
+          SAME_REPOSITORY_NAME,
+        );
+
+        expect(extracted).toEqual([
+          {
+            owner: SAME_REPOSITORY_OWNER,
+            repo: SAME_REPOSITORY_NAME,
+            issueNumber: 7,
+          },
+        ]);
+      },
+    );
+
+    test('a cross-repository reference preceded by "Relates to" resolves the referenced owner and repo', () => {
+      const extracted = extractRelatesToKeywordIssueReferences(
+        'Relates to external-org/external-repo#321',
+        SAME_REPOSITORY_OWNER,
+        SAME_REPOSITORY_NAME,
+      );
+
+      expect(extracted).toEqual([
+        { owner: 'external-org', repo: 'external-repo', issueNumber: 321 },
+      ]);
+    });
+
+    test('a reference with no "relates to" keyword immediately before it is not counted', () => {
+      const extracted = extractRelatesToKeywordIssueReferences(
+        'See #123 for context.',
+        SAME_REPOSITORY_OWNER,
+        SAME_REPOSITORY_NAME,
+      );
+
+      expect(extracted).toEqual([]);
+    });
+
+    test('a reference preceded only by a closing keyword (not "relates to") is not counted by this extractor', () => {
+      const extracted = extractRelatesToKeywordIssueReferences(
+        'Closes #123',
         SAME_REPOSITORY_OWNER,
         SAME_REPOSITORY_NAME,
       );
