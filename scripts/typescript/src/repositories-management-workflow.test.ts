@@ -2122,6 +2122,15 @@ describe('update-repos FILES_TO_SYNC', () => {
     );
   });
 
+  test('.github/workflows/close-manual-prs.yml is listed in FILES_TO_SYNC', () => {
+    const { status, stdout } = runFilesToSyncArrayDeclaration();
+    expect(status).toBe(0);
+    const syncedFilePaths = stdout.split('\n').filter((line) => line !== '');
+    expect(syncedFilePaths).toContain(
+      '.github/workflows/close-manual-prs.yml',
+    );
+  });
+
   test('the synced .prettierignore excludes shell scripts', () => {
     const prettierIgnorePath = path.join(__dirname, '../../../.prettierignore');
     const prettierIgnoreContent = fs.readFileSync(prettierIgnorePath, 'utf8');
