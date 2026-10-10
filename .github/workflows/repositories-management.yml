@@ -62,6 +62,8 @@ jobs:
             ".github/workflows/close-manual-prs.yml"
             ".github/workflows/secret-scan.yml"
             ".github/workflows/ci-failure-issue-creator.yml"
+            "scripts/ci-fetch-check-run-details.sh"
+            "scripts/ci-failure-default-branch-upsert-issue.sh"
             ".github/CODEOWNERS"
             ".github/copilot-instructions.md"
             ".github/instructions/code-review.instructions.md"
