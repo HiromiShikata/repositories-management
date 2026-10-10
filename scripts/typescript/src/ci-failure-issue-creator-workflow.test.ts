@@ -24,9 +24,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isRecordArray = (value: unknown): value is Record<string, unknown>[] =>
   Array.isArray(value) && value.every(isRecord);
 
-// PyYAML's safe_load resolves a bare, unquoted `on:` mapping key to the
-// boolean True under YAML 1.1 resolution rules, not the string 'on', so the
-// trigger block must be read back from `d[True]` rather than `d['on']`.
 const parseYamlToJson = (yamlText: string, pythonExpression: string): unknown => {
   const output = execSync(
     `python3 -c "import yaml, sys, json; d=yaml.safe_load(sys.stdin); print(json.dumps(${pythonExpression}))"`,
