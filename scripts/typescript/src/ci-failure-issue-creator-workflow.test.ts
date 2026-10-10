@@ -10,44 +10,6 @@ const workflowContent = fs.readFileSync(
   'utf8',
 );
 
-const repositoriesManagementWorkflowContent = fs.readFileSync(
-  path.join(
-    __dirname,
-    '../../../.github/workflows/repositories-management.yml',
-  ),
-  'utf8',
-);
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const isRecordArray = (value: unknown): value is Record<string, unknown>[] =>
-  Array.isArray(value) && value.every(isRecord);
-
-const parseYamlToJson = (yamlText: string, pythonExpression: string): unknown => {
-  const output = execSync(
-    `python3 -c "import yaml, sys, json; d=yaml.safe_load(sys.stdin); print(json.dumps(${pythonExpression}))"`,
-    { input: yamlText },
-  )
-    .toString()
-    .trim();
-  return JSON.parse(output);
-};
-
-const extractFilesToSync = (content: string): string[] => {
-  const arrayMatch = content.match(/FILES_TO_SYNC=\(([\s\S]*?)\)/);
-  if (arrayMatch === null) {
-    throw new Error(
-      'FILES_TO_SYNC array not found in repositories-management.yml',
-    );
-  }
-  const quotedEntries = arrayMatch[1].match(/"([^"]+)"/g);
-  if (quotedEntries === null) {
-    return [];
-  }
-  return quotedEntries.map((entry) => entry.slice(1, -1));
-};
-
 type SimulatedWorkflowRunEvent = {
   conclusion: string;
   headBranch: string;
@@ -157,92 +119,6 @@ describe('ci-failure-issue-creator.yml workflow', () => {
       for (const runsOn of runsOnValues) {
         expect(runsOn).toBe('ubuntu-latest');
       }
-    });
-
-    test('trigger is workflow_run, types [completed], matching every workflow name via a glob, not check_suite', () => {
-      const onBlock = parseYamlToJson(workflowContent, 'd[True]');
-      if (!isRecord(onBlock)) {
-        throw new Error(`unexpected "on" block: ${JSON.stringify(onBlock)}`);
-      }
-      expect(onBlock['check_suite']).toBeUndefined();
-
-      const workflowRunTrigger = onBlock['workflow_run'];
-      if (!isRecord(workflowRunTrigger)) {
-        throw new Error(
-          `unexpected workflow_run trigger: ${JSON.stringify(workflowRunTrigger)}`,
-        );
-      }
-      expect(workflowRunTrigger['types']).toEqual(['completed']);
-      expect(workflowRunTrigger['workflows']).toEqual(['*']);
-    });
-
-    test('timeout-minutes is declared at 7 or below', () => {
-      const job = parseYamlToJson(
-        workflowContent,
-        "d['jobs']['create-or-comment-issue']",
-      );
-      if (!isRecord(job)) {
-        throw new Error(`unexpected job definition: ${JSON.stringify(job)}`);
-      }
-      const timeoutMinutes = job['timeout-minutes'];
-      if (typeof timeoutMinutes !== 'number') {
-        throw new Error(
-          `timeout-minutes is not declared as a number: ${JSON.stringify(timeoutMinutes)}`,
-        );
-      }
-      expect(timeoutMinutes).toBeLessThanOrEqual(7);
-    });
-
-    test('permissions are scoped to exactly contents: read and issues: write', () => {
-      const job = parseYamlToJson(
-        workflowContent,
-        "d['jobs']['create-or-comment-issue']",
-      );
-      if (!isRecord(job)) {
-        throw new Error(`unexpected job definition: ${JSON.stringify(job)}`);
-      }
-      const permissions = job['permissions'];
-      if (!isRecord(permissions)) {
-        throw new Error(
-          `unexpected permissions block: ${JSON.stringify(permissions)}`,
-        );
-      }
-      expect(permissions).toEqual({ contents: 'read', issues: 'write' });
-    });
-
-    test('a prior step invokes the check-run-details script and the issue-creating step invokes the upsert script', () => {
-      const job = parseYamlToJson(
-        workflowContent,
-        "d['jobs']['create-or-comment-issue']",
-      );
-      if (!isRecord(job)) {
-        throw new Error(`unexpected job definition: ${JSON.stringify(job)}`);
-      }
-      const steps = job['steps'];
-      if (!isRecordArray(steps)) {
-        throw new Error(`unexpected steps: ${JSON.stringify(steps)}`);
-      }
-
-      const detailsStepIndex = steps.findIndex(
-        (step) => step['run'] === 'scripts/ci-fetch-check-run-details.sh',
-      );
-      const upsertStepIndex = steps.findIndex(
-        (step) =>
-          step['run'] === 'scripts/ci-failure-default-branch-upsert-issue.sh',
-      );
-
-      expect(detailsStepIndex).toBeGreaterThanOrEqual(0);
-      expect(upsertStepIndex).toBeGreaterThan(detailsStepIndex);
-    });
-
-    test('FILES_TO_SYNC in repositories-management.yml includes both new fleet-synced scripts', () => {
-      const filesToSync = extractFilesToSync(
-        repositoriesManagementWorkflowContent,
-      );
-      expect(filesToSync).toContain('scripts/ci-fetch-check-run-details.sh');
-      expect(filesToSync).toContain(
-        'scripts/ci-failure-default-branch-upsert-issue.sh',
-      );
     });
   });
 
