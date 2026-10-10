@@ -21,7 +21,7 @@ EXISTING_ISSUE_NUMBER=$(gh issue list \
   --state open \
   --search "$ISSUE_TITLE in:title" \
   --json number,title \
-  --jq ".[] | select(.title == \"$ISSUE_TITLE\") | .number" \
+  | jq -r --arg title "$ISSUE_TITLE" '.[] | select(.title == $title) | .number' \
   | head -n1)
 
 if [ -n "$EXISTING_ISSUE_NUMBER" ]; then
