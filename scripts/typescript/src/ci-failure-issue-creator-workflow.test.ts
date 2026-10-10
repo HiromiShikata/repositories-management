@@ -1,9 +1,6 @@
-import { execSync, spawnSync } from 'child_process';
+import { execSync } from 'child_process';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
-
-const CI_FAILURE_ISSUE_TITLE = '[CI] Default branch CI failure';
 
 const workflowContent = fs.readFileSync(
   path.join(
@@ -13,140 +10,138 @@ const workflowContent = fs.readFileSync(
   'utf8',
 );
 
-const workflowExpressionValues: Record<string, string> = {
-  'github.repository': 'HiromiShikata/test-repo',
-  'github.server_url': 'https://github.com',
-  'github.event.check_suite.head_sha': 'abc123def456',
+const repositoriesManagementWorkflowContent = fs.readFileSync(
+  path.join(
+    __dirname,
+    '../../../.github/workflows/repositories-management.yml',
+  ),
+  'utf8',
+);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isRecordArray = (value: unknown): value is Record<string, unknown>[] =>
+  Array.isArray(value) && value.every(isRecord);
+
+// PyYAML's safe_load resolves a bare, unquoted `on:` mapping key to the
+// boolean True under YAML 1.1 resolution rules, not the string 'on', so the
+// trigger block must be read back from `d[True]` rather than `d['on']`.
+const parseYamlToJson = (yamlText: string, pythonExpression: string): unknown => {
+  const output = execSync(
+    `python3 -c "import yaml, sys, json; d=yaml.safe_load(sys.stdin); print(json.dumps(${pythonExpression}))"`,
+    { input: yamlText },
+  )
+    .toString()
+    .trim();
+  return JSON.parse(output);
 };
 
-const extractCreateOrCommentScript = (): string => {
-  const stepName = 'Create or comment on CI failure issue';
-  const stepStart = workflowContent.indexOf(`- name: ${stepName}`);
-  const runStart = workflowContent.indexOf('run: |', stepStart);
-  const afterRun = workflowContent.slice(runStart + 'run: |'.length + 1);
-  const lines = afterRun.split('\n');
-  const scriptIndentation = 10;
-  const stepKeyIndentation = 8;
-  const scriptLines: string[] = [];
-  for (const line of lines) {
-    if (line.trim() === '') {
-      scriptLines.push('');
-      continue;
-    }
-    const indentation = line.length - line.trimStart().length;
-    if (indentation <= stepKeyIndentation) {
+const extractFilesToSync = (content: string): string[] => {
+  const arrayMatch = content.match(/FILES_TO_SYNC=\(([\s\S]*?)\)/);
+  if (arrayMatch === null) {
+    throw new Error(
+      'FILES_TO_SYNC array not found in repositories-management.yml',
+    );
+  }
+  const quotedEntries = arrayMatch[1].match(/"([^"]+)"/g);
+  if (quotedEntries === null) {
+    return [];
+  }
+  return quotedEntries.map((entry) => entry.slice(1, -1));
+};
+
+type SimulatedWorkflowRunEvent = {
+  conclusion: string;
+  headBranch: string;
+  defaultBranch: string;
+  workflowRunName: string;
+  githubWorkflow: string;
+};
+
+const extractJobIfConditionText = (
+  content: string,
+  jobNameMarker: string,
+): string => {
+  const lines = content.split('\n');
+  const jobLineIndex = lines.findIndex((line) => line.includes(jobNameMarker));
+  const ifLineIndex = lines.findIndex(
+    (line, index) => index > jobLineIndex && line.trim().startsWith('if:'),
+  );
+  const ifLine = lines[ifLineIndex];
+  const bodyIndent = ifLine.indexOf('if:') + 2;
+  const conditionLines = [ifLine];
+  for (let index = ifLineIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() !== '' && !line.startsWith(' '.repeat(bodyIndent))) {
       break;
     }
-    scriptLines.push(line.slice(scriptIndentation));
+    conditionLines.push(line);
   }
-  return scriptLines
-    .join('\n')
-    .replace(
-      /\$\{\{\s*([^}]+?)\s*\}\}/g,
-      (_match: string, expression: string): string => {
-        const value = workflowExpressionValues[expression.trim()];
-        if (value === undefined) {
-          throw new Error(
-            `Unhandled workflow expression: ${expression.trim()}`,
-          );
-        }
-        return value;
-      },
-    );
+  return conditionLines.join('\n');
 };
 
-const ghStubSource = `#!/usr/bin/env bash
-set -uo pipefail
+const extractIfExpressionText = (ifConditionText: string): string => {
+  const lines = ifConditionText.split('\n');
+  const firstLine = lines[0];
+  const firstLineExpression = firstLine
+    .slice(firstLine.indexOf('if:') + 'if:'.length)
+    .trim();
+  const continuationLines = lines
+    .slice(1)
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+  return [firstLineExpression, ...continuationLines].join(' ').trim();
+};
 
-INVOCATION="$*"
-echo "$INVOCATION" >> "$GH_CALL_LOG"
+const substituteWorkflowRunIdentifiers = (
+  expressionText: string,
+  event: SimulatedWorkflowRunEvent,
+): string =>
+  expressionText
+    .replace(
+      /github\.event\.workflow_run\.conclusion/g,
+      JSON.stringify(event.conclusion),
+    )
+    .replace(
+      /github\.event\.workflow_run\.head_branch/g,
+      JSON.stringify(event.headBranch),
+    )
+    .replace(
+      /github\.event\.repository\.default_branch/g,
+      JSON.stringify(event.defaultBranch),
+    )
+    .replace(
+      /github\.event\.workflow_run\.name/g,
+      JSON.stringify(event.workflowRunName),
+    )
+    .replace(/github\.workflow/g, JSON.stringify(event.githubWorkflow));
 
-jq_expression=""
-previous_argument=""
-for argument in "$@"; do
-  if [ "$previous_argument" = "--jq" ]; then
-    jq_expression="$argument"
-  fi
-  previous_argument="$argument"
-done
+const isBooleanValue = (value: unknown): value is boolean =>
+  typeof value === 'boolean';
 
-emit() {
-  if [ -n "$jq_expression" ]; then
-    printf '%s' "$1" | jq -r "$jq_expression"
-  else
-    printf '%s\\n' "$1"
-  fi
-}
-
-case "$INVOCATION" in
-  issue\\ list*)
-    if [ -n "\${STUB_EXISTING_ISSUE_NUMBER:-}" ]; then
-      emit "[{\\"number\\":$STUB_EXISTING_ISSUE_NUMBER,\\"title\\":\\"[CI] Default branch CI failure\\"}]"
-    else
-      emit "[]"
-    fi
-    ;;
-  issue\\ comment*)
-    ;;
-  issue\\ create*)
-    echo "https://github.com/HiromiShikata/test-repo/issues/1"
-    ;;
-  *)
-    printf 'unexpected gh invocation: %s\\n' "$INVOCATION" >&2
-    exit 1
-    ;;
-esac
-`;
-
-const runCreateOrCommentStep = (
-  existingIssueNumber?: number,
-): {
-  exitCode: number | null;
-  ghCallLog: string[];
-  stderr: string;
-} => {
-  const sandbox = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'ci-failure-issue-creator-'),
-  );
-  try {
-    const stubDirectory = path.join(sandbox, 'bin');
-    fs.mkdirSync(stubDirectory);
-    const stubPath = path.join(stubDirectory, 'gh');
-    fs.writeFileSync(stubPath, ghStubSource);
-    fs.chmodSync(stubPath, 0o755);
-
-    const ghCallLogPath = path.join(sandbox, 'gh-calls.log');
-    fs.writeFileSync(ghCallLogPath, '');
-
-    const script = extractCreateOrCommentScript();
-
-    const env: Record<string, string> = {
-      PATH: `${stubDirectory}:${process.env.PATH ?? ''}`,
-      GH_TOKEN: 'stub-token',
-      GH_CALL_LOG: ghCallLogPath,
-    };
-    if (existingIssueNumber !== undefined) {
-      env['STUB_EXISTING_ISSUE_NUMBER'] = String(existingIssueNumber);
-    }
-
-    const outcome = spawnSync('bash', ['-c', script], {
-      encoding: 'utf8',
-      env,
-    });
-
-    const ghCallLog = fs
-      .readFileSync(ghCallLogPath, 'utf8')
-      .split('\n')
-      .filter((line) => line.length > 0);
-
-    return {
-      exitCode: outcome.status,
-      ghCallLog,
-      stderr: outcome.stderr,
-    };
-  } finally {
-    fs.rmSync(sandbox, { recursive: true });
+const evaluateSubstitutedBooleanExpression = (
+  expressionText: string,
+): boolean => {
+  const evaluated: unknown = eval(expressionText);
+  if (!isBooleanValue(evaluated)) {
+    throw new Error(
+      `Expected a boolean result for expression "${expressionText}", got: ${String(evaluated)}`,
+    );
   }
+  return evaluated;
+};
+
+const evaluateIfConditionForSimulatedEvent = (
+  ifConditionText: string,
+  event: SimulatedWorkflowRunEvent,
+): boolean => {
+  const expressionText = extractIfExpressionText(ifConditionText);
+  const substitutedExpressionText = substituteWorkflowRunIdentifiers(
+    expressionText,
+    event,
+  );
+  return evaluateSubstitutedBooleanExpression(substitutedExpressionText);
 };
 
 describe('ci-failure-issue-creator.yml workflow', () => {
@@ -155,7 +150,9 @@ describe('ci-failure-issue-creator.yml workflow', () => {
       const output = execSync(
         `python3 -c "import yaml, sys, json; d=yaml.safe_load(sys.stdin); print(json.dumps([j['runs-on'] for j in d['jobs'].values()]))"`,
         { input: workflowContent },
-      ).toString().trim();
+      )
+        .toString()
+        .trim();
       const runsOnValues: unknown = JSON.parse(output);
       if (!Array.isArray(runsOnValues)) {
         throw new Error(`unexpected output: ${output}`);
@@ -165,72 +162,137 @@ describe('ci-failure-issue-creator.yml workflow', () => {
       }
     });
 
-    test('job condition filters to failure conclusion on default branch only', () => {
-      expect(workflowContent).toContain(
-        "github.event.check_suite.conclusion == 'failure'",
+    test('trigger is workflow_run, types [completed], matching every workflow name via a glob, not check_suite', () => {
+      const onBlock = parseYamlToJson(workflowContent, 'd[True]');
+      if (!isRecord(onBlock)) {
+        throw new Error(`unexpected "on" block: ${JSON.stringify(onBlock)}`);
+      }
+      expect(onBlock['check_suite']).toBeUndefined();
+
+      const workflowRunTrigger = onBlock['workflow_run'];
+      if (!isRecord(workflowRunTrigger)) {
+        throw new Error(
+          `unexpected workflow_run trigger: ${JSON.stringify(workflowRunTrigger)}`,
+        );
+      }
+      expect(workflowRunTrigger['types']).toEqual(['completed']);
+      expect(workflowRunTrigger['workflows']).toEqual(['*']);
+    });
+
+    test('timeout-minutes is declared at 7 or below', () => {
+      const job = parseYamlToJson(
+        workflowContent,
+        "d['jobs']['create-or-comment-issue']",
       );
-      expect(workflowContent).toContain(
-        'github.event.check_suite.head_branch == github.event.repository.default_branch',
+      if (!isRecord(job)) {
+        throw new Error(`unexpected job definition: ${JSON.stringify(job)}`);
+      }
+      const timeoutMinutes = job['timeout-minutes'];
+      if (typeof timeoutMinutes !== 'number') {
+        throw new Error(
+          `timeout-minutes is not declared as a number: ${JSON.stringify(timeoutMinutes)}`,
+        );
+      }
+      expect(timeoutMinutes).toBeLessThanOrEqual(7);
+    });
+
+    test('permissions are scoped to exactly contents: read and issues: write', () => {
+      const job = parseYamlToJson(
+        workflowContent,
+        "d['jobs']['create-or-comment-issue']",
+      );
+      if (!isRecord(job)) {
+        throw new Error(`unexpected job definition: ${JSON.stringify(job)}`);
+      }
+      const permissions = job['permissions'];
+      if (!isRecord(permissions)) {
+        throw new Error(
+          `unexpected permissions block: ${JSON.stringify(permissions)}`,
+        );
+      }
+      expect(permissions).toEqual({ contents: 'read', issues: 'write' });
+    });
+
+    test('a prior step invokes the check-run-details script and the issue-creating step invokes the upsert script', () => {
+      const job = parseYamlToJson(
+        workflowContent,
+        "d['jobs']['create-or-comment-issue']",
+      );
+      if (!isRecord(job)) {
+        throw new Error(`unexpected job definition: ${JSON.stringify(job)}`);
+      }
+      const steps = job['steps'];
+      if (!isRecordArray(steps)) {
+        throw new Error(`unexpected steps: ${JSON.stringify(steps)}`);
+      }
+
+      const detailsStepIndex = steps.findIndex(
+        (step) => step['run'] === 'scripts/ci-fetch-check-run-details.sh',
+      );
+      const upsertStepIndex = steps.findIndex(
+        (step) =>
+          step['run'] === 'scripts/ci-failure-default-branch-upsert-issue.sh',
+      );
+
+      expect(detailsStepIndex).toBeGreaterThanOrEqual(0);
+      expect(upsertStepIndex).toBeGreaterThan(detailsStepIndex);
+    });
+
+    test('FILES_TO_SYNC in repositories-management.yml includes both new fleet-synced scripts', () => {
+      const filesToSync = extractFilesToSync(
+        repositoriesManagementWorkflowContent,
+      );
+      expect(filesToSync).toContain('scripts/ci-fetch-check-run-details.sh');
+      expect(filesToSync).toContain(
+        'scripts/ci-failure-default-branch-upsert-issue.sh',
       );
     });
   });
 
-  describe('Create or comment on CI failure issue step', () => {
-    test('searches for an existing open issue before acting', () => {
-      const result = runCreateOrCommentStep();
-      expect(result.stderr).not.toContain('unexpected gh invocation');
-      expect(result.exitCode).toBe(0);
-      const listCall = result.ghCallLog.find((call) =>
-        call.startsWith('issue list'),
+  describe('create-or-comment-issue job condition', () => {
+    const jobIfCondition = extractJobIfConditionText(
+      workflowContent,
+      'create-or-comment-issue:',
+    );
+
+    const baseEvent: SimulatedWorkflowRunEvent = {
+      conclusion: 'failure',
+      headBranch: 'main',
+      defaultBranch: 'main',
+      workflowRunName: 'Some Other Workflow',
+      githubWorkflow: 'CI Failure Issue Creator',
+    };
+
+    test('runs when the completed workflow failed on the default branch and is not this workflow itself', () => {
+      const result = evaluateIfConditionForSimulatedEvent(
+        jobIfCondition,
+        baseEvent,
       );
-      expect(listCall).toBeDefined();
+      expect(result).toBe(true);
     });
 
-    test('creates a new issue when no open issue with that title exists', () => {
-      const result = runCreateOrCommentStep();
-      expect(result.stderr).not.toContain('unexpected gh invocation');
-      expect(result.exitCode).toBe(0);
-      const createCall = result.ghCallLog.find((call) =>
-        call.startsWith('issue create'),
-      );
-      expect(createCall).toBeDefined();
-      expect(createCall).toContain(CI_FAILURE_ISSUE_TITLE);
+    test('does not run when the conclusion is not failure', () => {
+      const result = evaluateIfConditionForSimulatedEvent(jobIfCondition, {
+        ...baseEvent,
+        conclusion: 'success',
+      });
+      expect(result).toBe(false);
     });
 
-    test('does not create a new issue when an open issue already exists', () => {
-      const result = runCreateOrCommentStep(42);
-      expect(result.stderr).not.toContain('unexpected gh invocation');
-      expect(result.exitCode).toBe(0);
-      const createCall = result.ghCallLog.find((call) =>
-        call.startsWith('issue create'),
-      );
-      expect(createCall).toBeUndefined();
+    test('does not run when the completed run is not on the default branch', () => {
+      const result = evaluateIfConditionForSimulatedEvent(jobIfCondition, {
+        ...baseEvent,
+        headBranch: 'feature-branch',
+      });
+      expect(result).toBe(false);
     });
 
-    test('comments on the existing issue when one is found', () => {
-      const result = runCreateOrCommentStep(42);
-      expect(result.stderr).not.toContain('unexpected gh invocation');
-      expect(result.exitCode).toBe(0);
-      const commentCall = result.ghCallLog.find((call) =>
-        call.startsWith('issue comment'),
-      );
-      expect(commentCall).toBeDefined();
-      expect(commentCall).toContain('42');
-    });
-
-    test('comment and create bodies both link to the failed commit checks', () => {
-      const expectedUrl = `https://github.com/HiromiShikata/test-repo/commit/abc123def456/checks`;
-      const resultCreate = runCreateOrCommentStep();
-      const createCall = resultCreate.ghCallLog.find((call) =>
-        call.startsWith('issue create'),
-      );
-      expect(createCall).toContain(expectedUrl);
-
-      const resultComment = runCreateOrCommentStep(42);
-      const commentCall = resultComment.ghCallLog.find((call) =>
-        call.startsWith('issue comment'),
-      );
-      expect(commentCall).toContain(expectedUrl);
+    test('does not run when the completed workflow is this workflow itself (prevents a self-trigger loop)', () => {
+      const result = evaluateIfConditionForSimulatedEvent(jobIfCondition, {
+        ...baseEvent,
+        workflowRunName: baseEvent.githubWorkflow,
+      });
+      expect(result).toBe(false);
     });
   });
 });
