@@ -3,6 +3,7 @@ import * as path from 'path';
 import semver from 'semver';
 
 const packageLockPath = path.join(__dirname, '../package-lock.json');
+const packageJsonPath = path.join(__dirname, '../package.json');
 
 type PackageLockPackages = Record<string, unknown>;
 
@@ -45,6 +46,34 @@ const findEntriesByPackageName = (
     });
 };
 
+const readPackageJsonHandlebarsOverrideVersion = (): string => {
+  const raw = fs.readFileSync(packageJsonPath, 'utf8');
+  const parsed: unknown = JSON.parse(raw);
+  if (!isRecord(parsed) || !isRecord(parsed.overrides)) {
+    throw new Error(
+      `expected "${packageJsonPath}" to have an object "overrides" field`,
+    );
+  }
+  const { overrides } = parsed;
+  const handlebarsOverrideKey = Object.keys(overrides).find((key) =>
+    key.startsWith('handlebars@'),
+  );
+  if (handlebarsOverrideKey === undefined) {
+    throw new Error(
+      `expected "${packageJsonPath}" "overrides" to have a key starting with "handlebars@", but none was found among [${Object.keys(
+        overrides,
+      ).join(', ')}]`,
+    );
+  }
+  const overrideVersion = overrides[handlebarsOverrideKey];
+  if (typeof overrideVersion !== 'string' || overrideVersion.length === 0) {
+    throw new Error(
+      `expected "${packageJsonPath}" "overrides"."${handlebarsOverrideKey}" to be a non-empty string`,
+    );
+  }
+  return overrideVersion;
+};
+
 describe('scripts/typescript/package-lock.json handlebars Dependabot alerts', () => {
   test('every handlebars entry resolves to a version patched against the Dependabot-flagged range (>=4.0.0,<=4.7.9)', () => {
     const packages = readPackageLockPackages();
@@ -61,5 +90,16 @@ describe('scripts/typescript/package-lock.json handlebars Dependabot alerts', ()
       }
       expect(isPatched).toBe(true);
     });
+  });
+
+  test('package.json "overrides" pins handlebars to a version patched against the Dependabot-flagged range (>=4.0.0,<=4.7.9)', () => {
+    const overrideVersion = readPackageJsonHandlebarsOverrideVersion();
+    const isPatched = semver.gte(overrideVersion, '4.7.10');
+    if (!isPatched) {
+      throw new Error(
+        `expected "${packageJsonPath}" "overrides" handlebars entry to pin a version >=4.7.10 (the Dependabot first_patched_version shared by GHSA-8r5x-fm3f-whwj and GHSA-p8wg-vrv2-v86f), but found "${overrideVersion}"`,
+      );
+    }
+    expect(isPatched).toBe(true);
   });
 });
