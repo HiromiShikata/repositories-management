@@ -58,15 +58,6 @@ const findResolvedCopiesInLockfile = (
     });
 };
 
-// The `npm` package ships several of its own dependencies as bundled
-// copies under `node_modules/npm/node_modules/...` (npm's own
-// `bundleDependencies` mechanism). A bundled copy is a frozen snapshot
-// embedded at publish time: it is categorically unreachable by this
-// project's package.json "overrides" field no matter how that field is
-// written, so it MUST be excluded from the "every resolved copy is
-// patched" scans below. Everywhere else in the lockfile a resolved copy
-// is reachable by "overrides" and MUST stay in scope, including when the
-// package is nested at any depth under that bundled subtree.
 const npmBundledLockfileSubtreePrefix = 'node_modules/npm/node_modules/';
 
 const isUnreachableNpmBundledLockfileCopy = (key: string): boolean =>
