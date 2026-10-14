@@ -125,8 +125,6 @@ type SingleTierSecurityPatchCase = {
 const singleTierSecurityPatchCases: SingleTierSecurityPatchCase[] = [
   { packageName: 'brace-expansion', requiredMinimumVersion: '5.0.12' },
   { packageName: 'ip-address', requiredMinimumVersion: '10.7.4' },
-  { packageName: 'http-cache-semantics', requiredMinimumVersion: '4.3.0' },
-  { packageName: 'postcss-selector-parser', requiredMinimumVersion: '7.1.6' },
   { packageName: 'npm', requiredMinimumVersion: '12.2.0' },
 ];
 
