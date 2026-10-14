@@ -58,6 +58,28 @@ const findResolvedCopiesInLockfile = (
     });
 };
 
+// The `npm` package ships several of its own dependencies as bundled
+// copies under `node_modules/npm/node_modules/...` (npm's own
+// `bundleDependencies` mechanism). A bundled copy is a frozen snapshot
+// embedded at publish time: it is categorically unreachable by this
+// project's package.json "overrides" field no matter how that field is
+// written, so it MUST be excluded from the "every resolved copy is
+// patched" scans below. Everywhere else in the lockfile a resolved copy
+// is reachable by "overrides" and MUST stay in scope, including when the
+// package is nested at any depth under that bundled subtree.
+const npmBundledLockfileSubtreePrefix = 'node_modules/npm/node_modules/';
+
+const isUnreachableNpmBundledLockfileCopy = (key: string): boolean =>
+  key.includes(npmBundledLockfileSubtreePrefix);
+
+const findReachableResolvedCopiesInLockfile = (
+  packages: PackageLockPackages,
+  packageName: string,
+): ResolvedLockfileCopy[] =>
+  findResolvedCopiesInLockfile(packages, packageName).filter(
+    ({ key }) => !isUnreachableNpmBundledLockfileCopy(key),
+  );
+
 const overridesKeyNamesPackage = (key: string, packageName: string): boolean =>
   key === packageName || key.startsWith(`${packageName}@`);
 
@@ -110,16 +132,27 @@ const singleTierSecurityPatchCases: SingleTierSecurityPatchCase[] = [
 
 describe('scripts/typescript dependency security-patch overrides (single required minimum version per package)', () => {
   test.each(singleTierSecurityPatchCases)(
-    '$packageName: every package-lock.json resolved copy and the package.json "overrides" declaration are both >= $requiredMinimumVersion',
+    '$packageName: the top-level package-lock.json entry, every other reachable resolved copy, and the package.json "overrides" declaration are all >= $requiredMinimumVersion',
     ({ packageName, requiredMinimumVersion }) => {
       const packages = readPackageLockPackages();
-      const resolvedCopies = findResolvedCopiesInLockfile(
+      const exactTopLevelKey = `node_modules/${packageName}`;
+
+      const reachableCopies = findReachableResolvedCopiesInLockfile(
         packages,
         packageName,
       );
-      expect(resolvedCopies.length).toBeGreaterThan(0);
+      expect(reachableCopies.length).toBeGreaterThan(0);
 
-      resolvedCopies.forEach(({ key, version }) => {
+      const topLevelCopy = reachableCopies.find(
+        ({ key }) => key === exactTopLevelKey,
+      );
+      if (topLevelCopy === undefined) {
+        throw new Error(
+          `expected package-lock.json to have a top-level entry "${exactTopLevelKey}"`,
+        );
+      }
+
+      reachableCopies.forEach(({ key, version }) => {
         const isPatched = semver.gte(version, requiredMinimumVersion);
         if (!isPatched) {
           throw new Error(
@@ -152,12 +185,15 @@ describe('scripts/typescript undici dependency security-patch overrides (two ind
   const undiciSixLineRequiredMinimumVersion = '6.28.1';
   const undiciSevenLineRequiredMinimumVersion = '7.29.1';
 
-  test('every package-lock.json resolved undici copy is >=6.28.1 on the 6.x line or >=7.29.1 on the 7.x-or-above line', () => {
+  test('every reachable package-lock.json resolved undici copy is >=6.28.1 on the 6.x line or >=7.29.1 on the 7.x-or-above line', () => {
     const packages = readPackageLockPackages();
-    const resolvedCopies = findResolvedCopiesInLockfile(packages, 'undici');
-    expect(resolvedCopies.length).toBeGreaterThan(0);
+    const reachableCopies = findReachableResolvedCopiesInLockfile(
+      packages,
+      'undici',
+    );
+    expect(reachableCopies.length).toBeGreaterThan(0);
 
-    resolvedCopies.forEach(({ key, version }) => {
+    reachableCopies.forEach(({ key, version }) => {
       const resolvedMajorVersion = majorVersionOf(version);
       const requiredMinimumVersion =
         resolvedMajorVersion === 6
