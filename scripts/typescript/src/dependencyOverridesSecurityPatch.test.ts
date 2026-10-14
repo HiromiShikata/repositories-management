@@ -117,6 +117,7 @@ const singleTierSecurityPatchCases: SingleTierSecurityPatchCase[] = [
   { packageName: 'brace-expansion', requiredMinimumVersion: '5.0.12' },
   { packageName: 'ip-address', requiredMinimumVersion: '10.7.4' },
   { packageName: 'npm', requiredMinimumVersion: '12.2.0' },
+  { packageName: 'basic-ftp', requiredMinimumVersion: '6.2.1' },
 ];
 
 describe('scripts/typescript dependency security-patch overrides (single required minimum version per package)', () => {
