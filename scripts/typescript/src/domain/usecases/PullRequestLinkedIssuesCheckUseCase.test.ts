@@ -464,6 +464,7 @@ describe('isExcludedHeadRef', () => {
       'renovate/**',
       'fleet-live',
       'fleet-live-to-main',
+      'update-dependencies-**',
     ]);
   });
 
@@ -488,6 +489,13 @@ describe('isExcludedHeadRef', () => {
     { headRef: 'my-fleet-live-to-main-thing', expected: false },
     { headRef: 'i1234', expected: false },
     { headRef: 'main', expected: false },
+    { headRef: 'update-dependencies-20261011', expected: true },
+    { headRef: 'update-dependencies-20261012', expected: true },
+    { headRef: 'update-dependencies-abc', expected: true },
+    { headRef: 'update-dependencies-', expected: true },
+    { headRef: 'update-dependencies', expected: false },
+    { headRef: 'update-dependenciesx', expected: false },
+    { headRef: 'my-update-dependencies-thing', expected: false },
   ];
 
   test.each(cases)(
