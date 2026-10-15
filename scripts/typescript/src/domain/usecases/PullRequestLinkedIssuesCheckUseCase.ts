@@ -10,6 +10,7 @@ export const EXCLUDED_HEAD_REF_GLOBS: string[] = [
   'renovate/**',
   'fleet-live',
   'fleet-live-to-main',
+  'update-dependencies-**',
 ];
 
 export const isExcludedHeadRef = (headRef: string): boolean => {
