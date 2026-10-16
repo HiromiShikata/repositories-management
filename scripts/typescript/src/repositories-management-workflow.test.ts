@@ -2131,6 +2131,16 @@ describe('update-repos FILES_TO_SYNC', () => {
     );
   });
 
+  test.each([
+    'scripts/ci-fetch-check-run-details.sh',
+    'scripts/ci-failure-default-branch-upsert-issue.sh',
+  ])('%s is listed in FILES_TO_SYNC', (expectedSyncedFilePath) => {
+    const { status, stdout } = runFilesToSyncArrayDeclaration();
+    expect(status).toBe(0);
+    const syncedFilePaths = stdout.split('\n').filter((line) => line !== '');
+    expect(syncedFilePaths).toContain(expectedSyncedFilePath);
+  });
+
   test('the synced .prettierignore excludes shell scripts', () => {
     const prettierIgnorePath = path.join(__dirname, '../../../.prettierignore');
     const prettierIgnoreContent = fs.readFileSync(prettierIgnorePath, 'utf8');
