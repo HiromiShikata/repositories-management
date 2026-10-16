@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'scripts/typescript/**'
+  workflow_dispatch:
 
 concurrency:
   group: scripts-typescript-ci-${{ github.ref }}
@@ -36,7 +37,14 @@ jobs:
         run: npx tsc --noEmit -p tsconfig.json
         working-directory: scripts/typescript
       - name: Test (changed since base)
+        if: github.event_name == 'pull_request'
         run: npx jest --changedSince=origin/${{ github.event.pull_request.base.ref }}
+        working-directory: scripts/typescript
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test (full suite)
+        if: github.event_name != 'pull_request'
+        run: npx jest
         working-directory: scripts/typescript
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
