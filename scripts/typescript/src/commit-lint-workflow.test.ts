@@ -380,3 +380,121 @@ describe('Lint commits step FROM_REF computation (pinned, this fix does not touc
     },
   );
 });
+
+const bareIssueNumberShorthandStepName =
+  'Check for bare issue-number shorthand';
+const installCommitlintStepName = 'Install commitlint';
+const prTitleConventionalCommitStepName =
+  'Check PR title follows conventional commit format';
+
+type GitHubActionsExpressionContext = {
+  github: {
+    head_ref: string;
+  };
+};
+
+const extractIfConditionExpression = (stepName: string): string => {
+  const stepBlock = extractStepBlock(stepName);
+  const ifLineMatch = stepBlock.match(/^\s*if:\s*(.+)$/m);
+  if (ifLineMatch === null) {
+    throw new Error(`no if: line found in step block for: ${stepName}`);
+  }
+  return ifLineMatch[1].trim();
+};
+
+// Implements only the subset of GitHub Actions expression semantics that
+// `.github/workflows/commit-lint.yml`'s own if: conditions use today:
+// single-quoted string literals, github.head_ref context resolution,
+// != / == string comparison, and && (logical AND of every comparison).
+const evaluateGitHubActionsIfExpression = (
+  expression: string,
+  context: GitHubActionsExpressionContext,
+): boolean => {
+  const resolveOperand = (token: string): string => {
+    const trimmed = token.trim();
+    const quotedStringMatch = trimmed.match(/^'([^']*)'$/);
+    if (quotedStringMatch !== null) {
+      return quotedStringMatch[1];
+    }
+    if (trimmed === 'github.head_ref') {
+      return context.github.head_ref;
+    }
+    throw new Error(
+      `unsupported operand in GitHub Actions expression evaluator: ${trimmed}`,
+    );
+  };
+
+  const evaluateComparison = (comparison: string): boolean => {
+    const notEqualMatch = comparison.match(/^(.+?)!=(.+)$/);
+    if (notEqualMatch !== null) {
+      return (
+        resolveOperand(notEqualMatch[1]) !== resolveOperand(notEqualMatch[2])
+      );
+    }
+    const equalMatch = comparison.match(/^(.+?)==(.+)$/);
+    if (equalMatch !== null) {
+      return (
+        resolveOperand(equalMatch[1]) === resolveOperand(equalMatch[2])
+      );
+    }
+    throw new Error(
+      `unsupported comparison in GitHub Actions expression evaluator: ${comparison}`,
+    );
+  };
+
+  return expression
+    .split('&&')
+    .map(evaluateComparison)
+    .every((result) => result === true);
+};
+
+describe('"if" condition expressions gating fleet-live steps on github.head_ref (https://github.com/HiromiShikata/repositories-management/issues/757)', () => {
+  const fleetLiveGatedStepNames = [
+    bareIssueNumberShorthandStepName,
+    installCommitlintStepName,
+    lintCommitsStepName,
+  ];
+
+  test.each(fleetLiveGatedStepNames)(
+    '%s step evaluates its if: condition to false (skipped) when github.head_ref is fleet-live',
+    (stepName) => {
+      const expression = extractIfConditionExpression(stepName);
+      expect(
+        evaluateGitHubActionsIfExpression(expression, {
+          github: { head_ref: 'fleet-live' },
+        }),
+      ).toBe(false);
+    },
+  );
+
+  test.each(fleetLiveGatedStepNames)(
+    '%s step evaluates its if: condition to false (skipped) when github.head_ref is fleet-live-to-main',
+    (stepName) => {
+      const expression = extractIfConditionExpression(stepName);
+      expect(
+        evaluateGitHubActionsIfExpression(expression, {
+          github: { head_ref: 'fleet-live-to-main' },
+        }),
+      ).toBe(false);
+    },
+  );
+
+  test.each(fleetLiveGatedStepNames)(
+    '%s step evaluates its if: condition to true (not skipped) when github.head_ref is an ordinary feature branch',
+    (stepName) => {
+      const expression = extractIfConditionExpression(stepName);
+      expect(
+        evaluateGitHubActionsIfExpression(expression, {
+          github: { head_ref: 'i757' },
+        }),
+      ).toBe(true);
+    },
+  );
+});
+
+describe('"Check PR title follows conventional commit format" step is never skipped based on github.head_ref (https://github.com/HiromiShikata/repositories-management/issues/757)', () => {
+  test('carries no if: key at all, so GitHub Actions always runs it unconditionally', () => {
+    const stepBlock = extractStepBlock(prTitleConventionalCommitStepName);
+    expect(/^\s*if:\s*/m.test(stepBlock)).toBe(false);
+  });
+});
