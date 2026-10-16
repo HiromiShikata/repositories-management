@@ -181,11 +181,134 @@ const runShellCommand = (command: string, cwd: string): ShellCommandOutcome => {
   };
 };
 
+const extractOnBlockTriggerNames = (): unknown[] => {
+  const outcome = spawnSync(
+    'python3',
+    [
+      '-c',
+      [
+        'import yaml, sys, json',
+        'd = yaml.safe_load(sys.stdin)',
+        "on_block = d[True] if True in d else d.get('on')",
+        'print(json.dumps(list(on_block.keys())))',
+      ].join('\n'),
+    ],
+    { input: workflowFileContent, encoding: 'utf8' },
+  );
+  if (outcome.error) {
+    throw new Error(
+      `failed to parse the "on" block of ${WORKFLOW_FILE_PATH} with python3: ${outcome.error.message}`,
+    );
+  }
+  if (outcome.status !== 0) {
+    throw new Error(
+      `python3 YAML parsing of the "on" block in ${WORKFLOW_FILE_PATH} exited with code ${String(outcome.status)}. stderr: ${outcome.stderr}`,
+    );
+  }
+  const triggerNames: unknown = JSON.parse(outcome.stdout.trim());
+  if (!Array.isArray(triggerNames)) {
+    throw new Error(
+      `expected an array of "on" block trigger names, got: ${outcome.stdout}`,
+    );
+  }
+  return triggerNames;
+};
+
+type SimulatedGithubEventName = 'pull_request' | 'workflow_dispatch';
+
+const extractStepIfConditionExpressionText = (stepName: string): string => {
+  const stepNamePattern = new RegExp(
+    `^(\\s*)-\\s+name:\\s*${escapeRegExpLiteral(stepName)}\\s*$`,
+  );
+  const nameLineIndex = findLineIndex(stepNamePattern);
+  if (nameLineIndex === -1) {
+    throw new Error(
+      `expected a step named "${stepName}" in ${WORKFLOW_FILE_PATH}, but none was found`,
+    );
+  }
+  const nameLineMatch = workflowFileLines[nameLineIndex].match(stepNamePattern);
+  const dashIndentWidth = nameLineMatch?.[1]?.length ?? 0;
+
+  const stepBodyLines: string[] = [];
+  for (const line of workflowFileLines.slice(nameLineIndex + 1)) {
+    if (line.trim() === '') {
+      stepBodyLines.push(line);
+      continue;
+    }
+    if (lineIndentWidth(line) <= dashIndentWidth) {
+      break;
+    }
+    stepBodyLines.push(line);
+  }
+
+  const ifLineIndex = stepBodyLines.findIndex((line) =>
+    line.trim().startsWith('if:'),
+  );
+  if (ifLineIndex === -1) {
+    throw new Error(
+      `expected step "${stepName}" in ${WORKFLOW_FILE_PATH} to have an "if:" condition, but none was found`,
+    );
+  }
+  const ifLine = stepBodyLines[ifLineIndex];
+  const ifBodyIndentWidth = ifLine.indexOf('if:') + 2;
+  const ifConditionLines = [ifLine];
+  for (const line of stepBodyLines.slice(ifLineIndex + 1)) {
+    if (line.trim() !== '' && !line.startsWith(' '.repeat(ifBodyIndentWidth))) {
+      break;
+    }
+    ifConditionLines.push(line);
+  }
+
+  const firstLineExpression = ifLine
+    .slice(ifLine.indexOf('if:') + 'if:'.length)
+    .trim();
+  const continuationLines = ifConditionLines
+    .slice(1)
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+  return [firstLineExpression, ...continuationLines].join(' ').trim();
+};
+
+const substituteGithubEventName = (
+  expressionText: string,
+  simulatedEventName: SimulatedGithubEventName,
+): string =>
+  expressionText.replace(
+    /github\.event_name/g,
+    JSON.stringify(simulatedEventName),
+  );
+
+const isBooleanValue = (value: unknown): value is boolean =>
+  typeof value === 'boolean';
+
+const evaluateIfConditionForSimulatedEventName = (
+  stepName: string,
+  simulatedEventName: SimulatedGithubEventName,
+): boolean => {
+  const expressionText = extractStepIfConditionExpressionText(stepName);
+  const substitutedExpressionText = substituteGithubEventName(
+    expressionText,
+    simulatedEventName,
+  );
+  const evaluated: unknown = eval(substitutedExpressionText);
+  if (!isBooleanValue(evaluated)) {
+    throw new Error(
+      `expected a boolean result for expression "${substitutedExpressionText}", got: ${String(evaluated)}`,
+    );
+  }
+  return evaluated;
+};
+
 describe('scripts-typescript-ci.yml pull request CI workflow', () => {
   describe('trigger configuration', () => {
     test('pull_request paths filter scopes the workflow to scripts/typescript changes', () => {
       const pathsFilter = extractPullRequestPathsFilter();
       expect(pathsFilter).toContain('scripts/typescript/**');
+    });
+
+    test('the on block declares a workflow_dispatch trigger in addition to pull_request', () => {
+      const onTriggerNames = extractOnBlockTriggerNames();
+      expect(onTriggerNames).toContain('workflow_dispatch');
     });
   });
 
@@ -250,5 +373,41 @@ describe('scripts-typescript-ci.yml pull request CI workflow', () => {
       }
       expect(outcome.exitCode).toBe(0);
     }, 150000);
+  });
+
+  describe('"Test (changed since base)" step condition', () => {
+    test('runs when triggered by a pull_request event', () => {
+      const result = evaluateIfConditionForSimulatedEventName(
+        'Test (changed since base)',
+        'pull_request',
+      );
+      expect(result).toBe(true);
+    });
+
+    test('does not run when triggered by a workflow_dispatch event', () => {
+      const result = evaluateIfConditionForSimulatedEventName(
+        'Test (changed since base)',
+        'workflow_dispatch',
+      );
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('"Test (full suite)" step condition', () => {
+    test('does not run when triggered by a pull_request event', () => {
+      const result = evaluateIfConditionForSimulatedEventName(
+        'Test (full suite)',
+        'pull_request',
+      );
+      expect(result).toBe(false);
+    });
+
+    test('runs when triggered by a workflow_dispatch event', () => {
+      const result = evaluateIfConditionForSimulatedEventName(
+        'Test (full suite)',
+        'workflow_dispatch',
+      );
+      expect(result).toBe(true);
+    });
   });
 });
