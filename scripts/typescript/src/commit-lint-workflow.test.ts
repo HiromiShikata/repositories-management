@@ -402,10 +402,6 @@ const extractIfConditionExpression = (stepName: string): string => {
   return ifLineMatch[1].trim();
 };
 
-// Implements only the subset of GitHub Actions expression semantics that
-// `.github/workflows/commit-lint.yml`'s own if: conditions use today:
-// single-quoted string literals, github.head_ref context resolution,
-// != / == string comparison, and && (logical AND of every comparison).
 const evaluateGitHubActionsIfExpression = (
   expression: string,
   context: GitHubActionsExpressionContext,
@@ -446,6 +442,18 @@ const evaluateGitHubActionsIfExpression = (
     .split('&&')
     .map(evaluateComparison)
     .every((result) => result === true);
+};
+
+const stepRunsForContext = (
+  stepName: string,
+  context: GitHubActionsExpressionContext,
+): boolean => {
+  const stepBlock = extractStepBlock(stepName);
+  const ifLineMatch = stepBlock.match(/^\s*if:\s*(.+)$/m);
+  if (ifLineMatch === null) {
+    return true;
+  }
+  return evaluateGitHubActionsIfExpression(ifLineMatch[1].trim(), context);
 };
 
 describe('"if" condition expressions gating fleet-live steps on github.head_ref (https://github.com/HiromiShikata/repositories-management/issues/757)', () => {
@@ -493,8 +501,14 @@ describe('"if" condition expressions gating fleet-live steps on github.head_ref 
 });
 
 describe('"Check PR title follows conventional commit format" step is never skipped based on github.head_ref (https://github.com/HiromiShikata/repositories-management/issues/757)', () => {
-  test('carries no if: key at all, so GitHub Actions always runs it unconditionally', () => {
-    const stepBlock = extractStepBlock(prTitleConventionalCommitStepName);
-    expect(/^\s*if:\s*/m.test(stepBlock)).toBe(false);
-  });
+  test.each(['fleet-live', 'fleet-live-to-main', 'i757'])(
+    'runs unconditionally (if: absent defaults to always-run) when github.head_ref is %s',
+    (headRef) => {
+      expect(
+        stepRunsForContext(prTitleConventionalCommitStepName, {
+          github: { head_ref: headRef },
+        }),
+      ).toBe(true);
+    },
+  );
 });
