@@ -58,6 +58,7 @@ jobs:
             "scripts/ensure-repositories-management-scripts-typescript.sh"
             ".github/workflows/create-pr.yml"
             "scripts/enable-auto-merge-error-handler.sh"
+            "scripts/get-pr-node-id-with-retry.sh"
             ".github/workflows/api-created_issue_pr.yml"
             ".github/workflows/close-manual-prs.yml"
             ".github/workflows/secret-scan.yml"

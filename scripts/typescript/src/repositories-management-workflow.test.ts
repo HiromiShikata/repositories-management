@@ -2134,6 +2134,7 @@ describe('update-repos FILES_TO_SYNC', () => {
   test.each([
     'scripts/ci-fetch-check-run-details.sh',
     'scripts/ci-failure-default-branch-upsert-issue.sh',
+    'scripts/get-pr-node-id-with-retry.sh',
   ])('%s is listed in FILES_TO_SYNC', (expectedSyncedFilePath) => {
     const { status, stdout } = runFilesToSyncArrayDeclaration();
     expect(status).toBe(0);
