@@ -127,14 +127,42 @@ const collectOverrideDeclaredVersions = (
   return declaredVersions;
 };
 
-const expectNoLockfileCopyInsideVulnerableRange = ({
-  packageName,
-  advisoryId,
-  vulnerableRange,
-}: AdvisoryRangeCase): void => {
-  const copies = findLockfileCopies(readPackageLockPackages(), packageName);
-  const offendingCopies = copies.filter(({ version }) =>
+const lockfilePackagesFromVersions = (
+  versionByLockfileKey: Record<string, string>,
+): PackageLockPackages =>
+  Object.fromEntries(
+    Object.entries(versionByLockfileKey).map(([key, version]) => [
+      key,
+      { version },
+    ]),
+  );
+
+const findLockfileCopiesInsideVulnerableRange = (
+  packages: PackageLockPackages,
+  { packageName, vulnerableRange }: AdvisoryRangeCase,
+): LockfileCopy[] =>
+  findLockfileCopies(packages, packageName).filter(({ version }) =>
     semver.satisfies(version, vulnerableRange, { includePrerelease: true }),
+  );
+
+const findLockfileCopiesLackingTopLevelEntry = (
+  packages: PackageLockPackages,
+  packageName: string,
+): LockfileCopy[] => {
+  const copies = findLockfileCopies(packages, packageName);
+  const hasTopLevelCopy = copies.some(
+    ({ key }) => key === `node_modules/${packageName}`,
+  );
+  return hasTopLevelCopy ? [] : copies;
+};
+
+const expectNoLockfileCopyInsideVulnerableRange = (
+  advisoryCase: AdvisoryRangeCase,
+): void => {
+  const { packageName, advisoryId, vulnerableRange } = advisoryCase;
+  const offendingCopies = findLockfileCopiesInsideVulnerableRange(
+    readPackageLockPackages(),
+    advisoryCase,
   );
   if (offendingCopies.length > 0) {
     const offenders = offendingCopies
@@ -253,11 +281,104 @@ const picomatchAdvisoryCases: AdvisoryRangeCase[] = [
   },
 ];
 
-const packagesRequiringTopLevelLockfileEntry = [
+const packagesRequiringTopLevelLockfileEntryWhenPresent = [
   'brace-expansion',
   'ip-address',
   'undici',
 ];
+
+type VulnerableRangeFixtureCase = {
+  description: string;
+  advisoryCase: OsvScannerAdvisoryCase;
+  versionByLockfileKey: Record<string, string>;
+  expectedOffendingKeys: string[];
+};
+
+const vulnerableRangeFixtureCases: VulnerableRangeFixtureCase[] =
+  osvScannerAdvisoryCases.flatMap((advisoryCase) => {
+    const {
+      packageName,
+      advisoryId,
+      scannerFlaggedVersion,
+      firstPatchedVersions,
+    } = advisoryCase;
+    const topLevelKey = `node_modules/${packageName}`;
+    const nestedKey = `node_modules/consumer/node_modules/${packageName}`;
+    const npmBundledKey = `node_modules/npm/node_modules/${packageName}`;
+    return [
+      {
+        description: `${packageName} ${advisoryId}: a lockfile without any ${packageName} entry`,
+        advisoryCase,
+        versionByLockfileKey: { 'node_modules/semver': '7.7.2' },
+        expectedOffendingKeys: [],
+      },
+      {
+        description: `${packageName} ${advisoryId}: top-level and nested copies at scanner-flagged version ${scannerFlaggedVersion}`,
+        advisoryCase,
+        versionByLockfileKey: {
+          [topLevelKey]: scannerFlaggedVersion,
+          [nestedKey]: scannerFlaggedVersion,
+        },
+        expectedOffendingKeys: [topLevelKey, nestedKey],
+      },
+      {
+        description: `${packageName} ${advisoryId}: a copy under npm's bundled dependencies at scanner-flagged version ${scannerFlaggedVersion}`,
+        advisoryCase,
+        versionByLockfileKey: { [npmBundledKey]: scannerFlaggedVersion },
+        expectedOffendingKeys: [npmBundledKey],
+      },
+      {
+        description: `${packageName} ${advisoryId}: nested copies at each first patched version ${firstPatchedVersions.join(', ')}`,
+        advisoryCase,
+        versionByLockfileKey: Object.fromEntries(
+          firstPatchedVersions.map((patchedVersion, index) => [
+            `node_modules/consumer-${index}/node_modules/${packageName}`,
+            patchedVersion,
+          ]),
+        ),
+        expectedOffendingKeys: [],
+      },
+    ];
+  });
+
+type TopLevelEntryFixtureCase = {
+  description: string;
+  packageName: string;
+  versionByLockfileKey: Record<string, string>;
+  expectedCopyKeysLackingTopLevelEntry: string[];
+};
+
+const topLevelEntryFixtureCases: TopLevelEntryFixtureCase[] =
+  packagesRequiringTopLevelLockfileEntryWhenPresent.flatMap((packageName) => {
+    const topLevelKey = `node_modules/${packageName}`;
+    const nestedKey = `node_modules/consumer/node_modules/${packageName}`;
+    return [
+      {
+        description: `${packageName} absent from the lockfile`,
+        packageName,
+        versionByLockfileKey: { 'node_modules/semver': '7.7.2' },
+        expectedCopyKeysLackingTopLevelEntry: [],
+      },
+      {
+        description: `${packageName} present only as a top-level copy`,
+        packageName,
+        versionByLockfileKey: { [topLevelKey]: '1.0.0' },
+        expectedCopyKeysLackingTopLevelEntry: [],
+      },
+      {
+        description: `${packageName} present as a top-level copy and a nested copy`,
+        packageName,
+        versionByLockfileKey: { [topLevelKey]: '1.0.0', [nestedKey]: '2.0.0' },
+        expectedCopyKeysLackingTopLevelEntry: [],
+      },
+      {
+        description: `${packageName} present only as a nested copy`,
+        packageName,
+        versionByLockfileKey: { [nestedKey]: '1.0.0' },
+        expectedCopyKeysLackingTopLevelEntry: [nestedKey],
+      },
+    ];
+  });
 
 const overrideMinimumVersionCases: OverrideMinimumVersionCase[] = [
   { packageName: 'axios', requiredMinimumVersion: '1.20.0' },
@@ -326,18 +447,19 @@ describe('scripts/typescript/package-lock.json pinned behaviour that must stay u
     },
   );
 
-  test.each(packagesRequiringTopLevelLockfileEntry)(
-    '%s keeps a top-level node_modules entry in package-lock.json',
+  test.each(packagesRequiringTopLevelLockfileEntryWhenPresent)(
+    '%s has a top-level node_modules entry in package-lock.json whenever any copy of it is present',
     (packageName) => {
-      const copies = findLockfileCopies(readPackageLockPackages(), packageName);
-      const topLevelKey = `node_modules/${packageName}`;
-      const topLevelCopy = copies.find(({ key }) => key === topLevelKey);
-      if (topLevelCopy === undefined) {
+      const copiesLackingTopLevelEntry = findLockfileCopiesLackingTopLevelEntry(
+        readPackageLockPackages(),
+        packageName,
+      );
+      if (copiesLackingTopLevelEntry.length > 0) {
         throw new Error(
-          `expected package-lock.json to have a top-level entry "${topLevelKey}", but found only [${copies.map(({ key }) => key).join(', ')}]`,
+          `expected package-lock.json to have a top-level entry "node_modules/${packageName}" whenever the package is present, but found only [${copiesLackingTopLevelEntry.map(({ key }) => key).join(', ')}]`,
         );
       }
-      expect(topLevelCopy.key).toBe(topLevelKey);
+      expect(copiesLackingTopLevelEntry).toEqual([]);
     },
   );
 
@@ -403,4 +525,36 @@ describe('scripts/typescript/package-lock.json pinned behaviour that must stay u
     }
     expect(problems).toEqual([]);
   });
+});
+
+describe('scripts/typescript/package-lock.json OSV-Scanner finding detection executed against in-memory lockfile fixtures', () => {
+  test.each(vulnerableRangeFixtureCases)(
+    'vulnerable range detection on $description reports exactly the offending lockfile keys',
+    ({ advisoryCase, versionByLockfileKey, expectedOffendingKeys }) => {
+      const offendingCopies = findLockfileCopiesInsideVulnerableRange(
+        lockfilePackagesFromVersions(versionByLockfileKey),
+        advisoryCase,
+      );
+      expect(offendingCopies.map(({ key }) => key)).toEqual(
+        expectedOffendingKeys,
+      );
+    },
+  );
+
+  test.each(topLevelEntryFixtureCases)(
+    'top-level entry detection on $description reports exactly the copies lacking a top-level entry',
+    ({
+      packageName,
+      versionByLockfileKey,
+      expectedCopyKeysLackingTopLevelEntry,
+    }) => {
+      const copiesLackingTopLevelEntry = findLockfileCopiesLackingTopLevelEntry(
+        lockfilePackagesFromVersions(versionByLockfileKey),
+        packageName,
+      );
+      expect(copiesLackingTopLevelEntry.map(({ key }) => key)).toEqual(
+        expectedCopyKeysLackingTopLevelEntry,
+      );
+    },
+  );
 });
