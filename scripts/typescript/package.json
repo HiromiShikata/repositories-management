@@ -24,22 +24,8 @@
   "bugs": {
     "url": "https://github.com/HiromiShikata/template-typescript/issues"
   },
-  "release": {
-    "plugins": [
-      "@semantic-release/commit-analyzer",
-      "@semantic-release/release-notes-generator",
-      "@semantic-release/changelog",
-      "@semantic-release/git"
-    ],
-    "branches": [
-      "main"
-    ]
-  },
   "homepage": "https://github.com/HiromiShikata/template-typescript#readme",
   "devDependencies": {
-    "@semantic-release/changelog": "^7.0.0",
-    "@semantic-release/commit-analyzer": "^13.0.0",
-    "@semantic-release/git": "^11.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/semver": "^7.5.8",
@@ -52,12 +38,10 @@
     "eslint-plugin-import": "^2.27.5",
     "eslint-plugin-no-type-assertion": "^1.3.0",
     "eslint-plugin-unused-imports": "^4.2.0",
-    "gh-cookie": "1.3.24",
     "jest": "^30.0.0",
     "jest-html-reporter": "^4.4.0",
     "jest-junit": "^17.0.0",
     "prettier": "^3.0.0",
-    "semantic-release": "^25.0.0",
     "semver": "^7.8.5",
     "ts-jest": "^29.4.7",
     "ts-node": "^10.9.2",
@@ -66,8 +50,7 @@
   },
   "dependencies": {
     "@octokit/rest": "^22.0.0",
-    "dotenv": "^18.0.0",
-    "gh-projects-working-time-reporter": "^1.2.5"
+    "dotenv": "^18.0.0"
   },
   "overrides": {
     "brace-expansion": "5.0.12",
