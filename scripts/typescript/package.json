@@ -27,7 +27,7 @@
   "homepage": "https://github.com/HiromiShikata/template-typescript#readme",
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.5",
     "@types/semver": "^7.5.8",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
