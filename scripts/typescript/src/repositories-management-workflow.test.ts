@@ -534,15 +534,14 @@ const expectedBranchProtectionPayload = {
     strict: false,
     contexts: [
       'commit-lint',
-      'create_and_enable_automerge',
       'Check linked issues in pull requests',
       'umino-job',
     ],
   },
   enforce_admins: false,
   required_pull_request_reviews: {
-    required_approving_review_count: 1,
-    require_code_owner_reviews: true,
+    required_approving_review_count: 0,
+    require_code_owner_reviews: false,
   },
   restrictions: null,
   required_linear_history: false,
@@ -2079,9 +2078,9 @@ describe('update-repos sync pull request creation and approval', () => {
   });
 });
 
-const filesToSyncArrayDeclarationScript = (): string => {
+const arrayDeclarationScript = (arrayName: string): string => {
   const stepBlock = extractStepBlock(syncStepName);
-  const start = stepBlock.indexOf('FILES_TO_SYNC=(');
+  const start = stepBlock.indexOf(`${arrayName}=(`);
   expect(start).toBeGreaterThanOrEqual(0);
   const end = stepBlock.indexOf('\n          for REPO in', start);
   expect(end).toBeGreaterThan(start);
@@ -2092,13 +2091,15 @@ const filesToSyncArrayDeclarationScript = (): string => {
     .join('\n');
 };
 
-const runFilesToSyncArrayDeclaration = (): {
+const runArrayDeclaration = (
+  arrayName: string,
+): {
   status: number;
   stdout: string;
 } => {
   const script = [
-    filesToSyncArrayDeclarationScript(),
-    'printf \'%s\\n\' "${FILES_TO_SYNC[@]}"',
+    arrayDeclarationScript(arrayName),
+    `printf '%s\\n' "\${${arrayName}[@]}"`,
   ].join('\n');
   const outcome = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
   return {
@@ -2106,6 +2107,11 @@ const runFilesToSyncArrayDeclaration = (): {
     stdout: outcome.stdout,
   };
 };
+
+const runFilesToSyncArrayDeclaration = (): {
+  status: number;
+  stdout: string;
+} => runArrayDeclaration('FILES_TO_SYNC');
 
 describe('update-repos FILES_TO_SYNC', () => {
   test('.prettierignore is listed in FILES_TO_SYNC', () => {
@@ -2122,19 +2128,9 @@ describe('update-repos FILES_TO_SYNC', () => {
     );
   });
 
-  test('.github/workflows/close-manual-prs.yml is listed in FILES_TO_SYNC', () => {
-    const { status, stdout } = runFilesToSyncArrayDeclaration();
-    expect(status).toBe(0);
-    const syncedFilePaths = stdout.split('\n').filter((line) => line !== '');
-    expect(syncedFilePaths).toContain(
-      '.github/workflows/close-manual-prs.yml',
-    );
-  });
-
   test.each([
     'scripts/ci-fetch-check-run-details.sh',
     'scripts/ci-failure-default-branch-upsert-issue.sh',
-    'scripts/get-pr-node-id-with-retry.sh',
   ])('%s is listed in FILES_TO_SYNC', (expectedSyncedFilePath) => {
     const { status, stdout } = runFilesToSyncArrayDeclaration();
     expect(status).toBe(0);
@@ -2162,6 +2158,22 @@ describe('update-repos FILES_TO_SYNC', () => {
     expect(syncedFilePaths).toContain(
       'scripts/ensure-repositories-management-scripts-typescript.sh',
     );
+  });
+});
+
+describe('update-repos FILES_TO_REMOVE', () => {
+  test.each([
+    '.github/workflows/create-pr.yml',
+    'scripts/enable-auto-merge-error-handler.sh',
+    'scripts/get-pr-node-id-with-retry.sh',
+    '.github/workflows/close-manual-prs.yml',
+  ])('%s is listed in FILES_TO_REMOVE and not in FILES_TO_SYNC', (removedFilePath) => {
+    const removed = runArrayDeclaration('FILES_TO_REMOVE');
+    expect(removed.status).toBe(0);
+    expect(removed.stdout.split('\n')).toContain(removedFilePath);
+    const synced = runArrayDeclaration('FILES_TO_SYNC');
+    expect(synced.status).toBe(0);
+    expect(synced.stdout.split('\n')).not.toContain(removedFilePath);
   });
 });
 
