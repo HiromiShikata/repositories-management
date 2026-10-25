@@ -540,8 +540,8 @@ const expectedBranchProtectionPayload = {
   },
   enforce_admins: false,
   required_pull_request_reviews: {
-    required_approving_review_count: 1,
-    require_code_owner_reviews: true,
+    required_approving_review_count: 0,
+    require_code_owner_reviews: false,
   },
   restrictions: null,
   required_linear_history: false,
