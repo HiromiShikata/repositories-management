@@ -298,7 +298,7 @@ describe('umino-project.yml workflow', () => {
       pullRequestAuthorLogin: 'HiromiShikata',
     };
 
-    test('runs on edited event after impl agent adds closing keyword to PR body', () => {
+    test('runs on edited event after implementation changes the PR body', () => {
       const conditionResult = evaluateIfConditionForSimulatedEvent(
         checkJobIfCondition,
         baseSimulatedEvent,
