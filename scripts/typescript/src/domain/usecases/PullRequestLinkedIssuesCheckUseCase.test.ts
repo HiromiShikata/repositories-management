@@ -1,7 +1,6 @@
 import {
   EXCLUDED_HEAD_REF_GLOBS,
   isExcludedHeadRef,
-  NO_LINKED_ISSUES_FOUND_MESSAGE,
   extractClosingKeywordIssueReferences,
   extractRelatesToKeywordIssueReferences,
   PullRequestLinkedIssuesCheckResult,
@@ -56,10 +55,10 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
 
   const tableCases: TableCase[] = [
     {
-      name: 'no closing keyword anywhere in the body fails',
+      name: 'no issue reference anywhere in the body succeeds',
       pullRequestBody: 'This PR has no issue reference at all.',
       existingIssueKeys: [],
-      expected: { kind: 'failure', message: NO_LINKED_ISSUES_FOUND_MESSAGE },
+      expected: { kind: 'success', linkedIssueCount: 0 },
     },
     {
       name: 'same-repository reference to an existing issue succeeds',
@@ -70,10 +69,10 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
       expected: { kind: 'success', linkedIssueCount: 1 },
     },
     {
-      name: 'same-repository reference to a non-existent issue fails',
+      name: 'same-repository reference to a non-existent issue yields zero links',
       pullRequestBody: 'Closes #43',
       existingIssueKeys: [],
-      expected: { kind: 'failure', message: NO_LINKED_ISSUES_FOUND_MESSAGE },
+      expected: { kind: 'success', linkedIssueCount: 0 },
     },
     {
       name: 'same-account different-repository reference to an existing issue succeeds',
@@ -82,10 +81,10 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
       expected: { kind: 'success', linkedIssueCount: 1 },
     },
     {
-      name: 'same-account different-repository reference to a non-existent issue fails',
+      name: 'same-account different-repository reference to a non-existent issue yields zero links',
       pullRequestBody: 'Fixes HiromiShikata/other-repo#8',
       existingIssueKeys: [],
-      expected: { kind: 'failure', message: NO_LINKED_ISSUES_FOUND_MESSAGE },
+      expected: { kind: 'success', linkedIssueCount: 0 },
     },
     {
       name: 'cross-organization reference to an existing issue succeeds',
@@ -130,10 +129,10 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
       expected: { kind: 'success', linkedIssueCount: 1 },
     },
     {
-      name: 'Relates to #N same-repository reference to a non-existent issue fails',
+      name: 'Relates to #N same-repository reference to a non-existent issue yields zero links',
       pullRequestBody: 'Relates to #51',
       existingIssueKeys: [],
-      expected: { kind: 'failure', message: NO_LINKED_ISSUES_FOUND_MESSAGE },
+      expected: { kind: 'success', linkedIssueCount: 0 },
     },
     {
       name: 'Relates to owner/repo#N same-account different-repository reference to an existing issue succeeds',
@@ -142,10 +141,10 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
       expected: { kind: 'success', linkedIssueCount: 1 },
     },
     {
-      name: 'Relates to owner/repo#N same-account different-repository reference to a non-existent issue fails',
+      name: 'Relates to owner/repo#N same-account different-repository reference to a non-existent issue yields zero links',
       pullRequestBody: 'Relates to HiromiShikata/other-repo#10',
       existingIssueKeys: [],
-      expected: { kind: 'failure', message: NO_LINKED_ISSUES_FOUND_MESSAGE },
+      expected: { kind: 'success', linkedIssueCount: 0 },
     },
     {
       name: 'Relates to full-URL cross-organization reference succeeds without an existence check',
@@ -180,10 +179,10 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
       expected: { kind: 'success', linkedIssueCount: 2 },
     },
     {
-      name: 'a bare reference with no recognized keyword (closing or Relates to) before it still fails',
+      name: 'a bare reference with no recognized keyword (closing or Relates to) yields zero links',
       pullRequestBody: 'See #60 for context.',
       existingIssueKeys: [],
-      expected: { kind: 'failure', message: NO_LINKED_ISSUES_FOUND_MESSAGE },
+      expected: { kind: 'success', linkedIssueCount: 0 },
     },
   ];
 
@@ -314,7 +313,7 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
           accountOwner: ACCOUNT_OWNER,
         });
 
-        expect(result.kind).toBe('failure');
+        expect(result).toEqual({ kind: 'success', linkedIssueCount: 0 });
       },
     );
   });
@@ -376,7 +375,7 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
       },
     );
 
-    test('a reference with no closing keyword immediately before it is not counted', () => {
+    test('a reference with no closing keyword immediately before it is not extracted', () => {
       const extracted = extractClosingKeywordIssueReferences(
         'See #123 for context.',
         SAME_REPOSITORY_OWNER,
@@ -447,11 +446,6 @@ describe('PullRequestLinkedIssuesCheckUseCase', () => {
     });
   });
 
-  test('NO_LINKED_ISSUES_FOUND_MESSAGE is exactly the specified string', () => {
-    expect(NO_LINKED_ISSUES_FOUND_MESSAGE).toBe(
-      'No linked issues found. Please add the corresponding issues in the pull request description.',
-    );
-  });
 });
 
 describe('isExcludedHeadRef', () => {

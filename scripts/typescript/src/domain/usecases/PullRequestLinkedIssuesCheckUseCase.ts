@@ -27,9 +27,6 @@ export const isExcludedHeadRef = (headRef: string): boolean => {
   });
 };
 
-export const NO_LINKED_ISSUES_FOUND_MESSAGE =
-  'No linked issues found. Please add the corresponding issues in the pull request description.';
-
 const CLOSING_KEYWORD_ALTERNATION =
   '(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)';
 const RELATES_TO_KEYWORD_ALTERNATION = '(?:relates to)';
@@ -194,9 +191,6 @@ export class PullRequestLinkedIssuesCheckUseCase {
 
     const linkedIssueCount =
       verifiedSameAccountReferenceCount + crossOrganizationReferences.length;
-    if (linkedIssueCount === 0) {
-      return { kind: 'failure', message: NO_LINKED_ISSUES_FOUND_MESSAGE };
-    }
     return { kind: 'success', linkedIssueCount };
   }
 }
