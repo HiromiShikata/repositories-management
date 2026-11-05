@@ -89,7 +89,7 @@ describe('check-pull-request-linked-issues-runner.sh', () => {
 
     expect(status).toBe(0);
     expect(stderr).toBe('');
-    expect(log).toContain(`npm ci cwd=${localScriptDir}`);
+    expect(log).toContain(`npm ci --omit=dev cwd=${localScriptDir}`);
     expect(log).toContain(`npx tsx ${CLI_RELATIVE_PATH} cwd=${localScriptDir}`);
     expect(log).not.toContain('gh ');
   });
@@ -134,8 +134,37 @@ describe('check-pull-request-linked-issues-runner.sh', () => {
     expect(log).toContain(
       'gh repo clone HiromiShikata/repositories-management',
     );
-    expect(log).toContain(`npm ci cwd=${clonedScriptDir}`);
+    expect(log).toContain(`npm ci --omit=dev cwd=${clonedScriptDir}`);
     expect(log).toContain(`npx tsx ${CLI_RELATIVE_PATH} cwd=${clonedScriptDir}`);
+  });
+});
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const readLockfilePackages = (): Record<string, unknown> => {
+  const parsed: unknown = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '../package-lock.json'), 'utf8'),
+  );
+  if (!isRecord(parsed) || !isRecord(parsed.packages)) {
+    throw new Error('package-lock.json has no packages map');
+  }
+  return parsed.packages;
+};
+
+describe('check-pull-request-linked-issues-runner.sh runtime dependencies', () => {
+  test('tsx is a runtime dependency of the root package and its esbuild entry is not marked dev, so npm ci --omit=dev installs the runner command', () => {
+    const packages = readLockfilePackages();
+    const rootEntry = packages[''];
+    const tsxEntry = packages['node_modules/tsx'];
+    const esbuildEntry = packages['node_modules/esbuild'];
+    expect(
+      isRecord(rootEntry) &&
+        isRecord(rootEntry.dependencies) &&
+        rootEntry.dependencies.tsx,
+    ).toBe('4.23.15');
+    expect(isRecord(tsxEntry) && tsxEntry.dev === undefined).toBe(true);
+    expect(isRecord(esbuildEntry) && esbuildEntry.dev === undefined).toBe(true);
   });
 });
 
