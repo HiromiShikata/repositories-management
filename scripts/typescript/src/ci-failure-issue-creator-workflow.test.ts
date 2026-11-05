@@ -105,7 +105,7 @@ const evaluateIfConditionForSimulatedEvent = (
 
 describe('ci-failure-issue-creator.yml workflow', () => {
   describe('workflow structure', () => {
-    test('uses ubuntu-latest runner for all repos', () => {
+    test('uses ubuntu-slim runner for all repos', () => {
       const output = execSync(
         `python3 -c "import yaml, sys, json; d=yaml.safe_load(sys.stdin); print(json.dumps([j['runs-on'] for j in d['jobs'].values()]))"`,
         { input: workflowContent },
@@ -117,7 +117,7 @@ describe('ci-failure-issue-creator.yml workflow', () => {
         throw new Error(`unexpected output: ${output}`);
       }
       for (const runsOn of runsOnValues) {
-        expect(runsOn).toBe('ubuntu-latest');
+        expect(runsOn).toBe('ubuntu-slim');
       }
     });
   });

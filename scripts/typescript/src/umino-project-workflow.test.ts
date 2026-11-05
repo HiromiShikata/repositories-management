@@ -281,6 +281,86 @@ describe('umino-project.yml workflow', () => {
 
       expect(conditionResult).toBe(false);
     });
+
+    const eventGatingCases: {
+      name: string;
+      eventName: string;
+      action: string;
+      expected: boolean;
+    }[] = [
+      {
+        name: 'runs for an issue opened event',
+        eventName: 'issues',
+        action: 'opened',
+        expected: true,
+      },
+      {
+        name: 'runs for an issue reopened event',
+        eventName: 'issues',
+        action: 'reopened',
+        expected: true,
+      },
+      {
+        name: 'runs for a pull request opened event',
+        eventName: 'pull_request',
+        action: 'opened',
+        expected: true,
+      },
+      {
+        name: 'skips a pull request synchronize event',
+        eventName: 'pull_request',
+        action: 'synchronize',
+        expected: false,
+      },
+      {
+        name: 'skips a pull request edited event',
+        eventName: 'pull_request',
+        action: 'edited',
+        expected: false,
+      },
+      {
+        name: 'skips a pull request reopened event',
+        eventName: 'pull_request',
+        action: 'reopened',
+        expected: false,
+      },
+      {
+        name: 'skips a pull request review_requested event',
+        eventName: 'pull_request',
+        action: 'review_requested',
+        expected: false,
+      },
+      {
+        name: 'skips a pull request labeled event',
+        eventName: 'pull_request',
+        action: 'labeled',
+        expected: false,
+      },
+      {
+        name: 'skips an issue edited event',
+        eventName: 'issues',
+        action: 'edited',
+        expected: false,
+      },
+    ];
+
+    test('runs only for issue opened/reopened and pull request opened events', () => {
+      const actualResults = eventGatingCases.map((testCase) => ({
+        name: testCase.name,
+        result: evaluateIfConditionForSimulatedEvent(uminoJobIfCondition, {
+          ...baseSimulatedEvent,
+          eventName: testCase.eventName,
+          action: testCase.action,
+        }),
+      }));
+
+      expect(actualResults).toEqual(
+        eventGatingCases.map((testCase) => ({
+          name: testCase.name,
+          result: testCase.expected,
+        })),
+      );
+    });
   });
 
   describe('check_pull_requests_to_link_issues job condition', () => {
@@ -606,7 +686,7 @@ describe('umino-project.yml workflow', () => {
   });
 
   describe('runner configuration', () => {
-    test('all jobs use ubuntu-latest runner for all repos', () => {
+    test('all jobs use ubuntu-slim runner for all repos', () => {
       const output = execSync(
         `python3 -c "import yaml, sys, json; d=yaml.safe_load(sys.stdin); print(json.dumps([j['runs-on'] for j in d['jobs'].values()]))"`,
         { input: workflowContent },
@@ -618,7 +698,7 @@ describe('umino-project.yml workflow', () => {
         throw new Error(`unexpected output: ${output}`);
       }
       for (const runsOn of runsOnValues) {
-        expect(runsOn).toBe('ubuntu-latest');
+        expect(runsOn).toBe('ubuntu-slim');
       }
     });
   });
