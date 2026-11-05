@@ -1,4 +1,4 @@
-import { spawnSync } from 'child_process';
+import { spawnSync, type SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -511,4 +511,148 @@ describe('"Check PR title follows conventional commit format" step is never skip
       ).toBe(true);
     },
   );
+});
+
+const resolveCommitlintCacheKeyStepName = 'Resolve commitlint cache key';
+const installCommitlintRunDirectoryPath = '/tmp/commitlint-run';
+
+type FakeNpmSandbox = {
+  sandboxDir: string;
+  binDir: string;
+  npmLogPath: string;
+  githubOutputPath: string;
+};
+
+const createFakeNpmSandbox = (npmBody: string): FakeNpmSandbox => {
+  const sandboxDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'commit-lint-workflow-npm-'),
+  );
+  const binDir = path.join(sandboxDir, 'bin');
+  fs.mkdirSync(binDir);
+  const npmLogPath = path.join(sandboxDir, 'npm-invocations.log');
+  fs.writeFileSync(
+    path.join(binDir, 'npm'),
+    `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "$STUB_NPM_LOG"\n${npmBody}\n`,
+    { mode: 0o755 },
+  );
+  const githubOutputPath = path.join(sandboxDir, 'github-output');
+  fs.writeFileSync(githubOutputPath, '');
+  return { sandboxDir, binDir, npmLogPath, githubOutputPath };
+};
+
+const runWorkflowStepScript = (
+  script: string,
+  sandbox: FakeNpmSandbox,
+): SpawnSyncReturns<string> =>
+  spawnSync('bash', ['-c', `set -e\n${script}`], {
+    cwd: sandbox.sandboxDir,
+    encoding: 'utf8',
+    env: {
+      PATH: `${sandbox.binDir}:${process.env.PATH ?? ''}`,
+      STUB_NPM_LOG: sandbox.npmLogPath,
+      GITHUB_OUTPUT: sandbox.githubOutputPath,
+    },
+  });
+
+describe('Resolve commitlint cache key step', () => {
+  test('writes the latest @commitlint/cli and @commitlint/config-conventional versions as the cache key', () => {
+    const sandbox = createFakeNpmSandbox(
+      [
+        'case "$*" in',
+        '  "view @commitlint/cli version") echo 21.2.4 ;;',
+        '  "view @commitlint/config-conventional version") echo 21.1.0 ;;',
+        '  *) echo "unexpected npm $*" >&2; exit 2 ;;',
+        'esac',
+      ].join('\n'),
+    );
+    try {
+      const outcome = runWorkflowStepScript(
+        extractRunScript(resolveCommitlintCacheKeyStepName),
+        sandbox,
+      );
+      expect(outcome.status).toBe(0);
+      expect(fs.readFileSync(sandbox.githubOutputPath, 'utf8')).toBe(
+        'key=21.2.4-21.1.0\n',
+      );
+    } finally {
+      fs.rmSync(sandbox.sandboxDir, { recursive: true, force: true });
+    }
+  });
+
+  test('fails the step and writes no cache key when npm cannot resolve a version', () => {
+    const sandbox = createFakeNpmSandbox(
+      'echo "registry unreachable" >&2\nexit 1',
+    );
+    try {
+      const outcome = runWorkflowStepScript(
+        extractRunScript(resolveCommitlintCacheKeyStepName),
+        sandbox,
+      );
+      expect(outcome.status).not.toBe(0);
+      expect(fs.readFileSync(sandbox.githubOutputPath, 'utf8')).toBe('');
+    } finally {
+      fs.rmSync(sandbox.sandboxDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Install commitlint step with the restored cache', () => {
+  const runInstallStepIn = (
+    commitlintRunDirectory: string,
+    sandbox: FakeNpmSandbox,
+  ): SpawnSyncReturns<string> => {
+    const script = extractRunScript(installCommitlintStepName)
+      .split(installCommitlintRunDirectoryPath)
+      .join(commitlintRunDirectory);
+    return runWorkflowStepScript(script, sandbox);
+  };
+
+  test('skips npm when the restored cache already contains the commitlint binary', () => {
+    const sandbox = createFakeNpmSandbox('exit 0');
+    try {
+      const commitlintRunDirectory = path.join(
+        sandbox.sandboxDir,
+        'commitlint-run',
+      );
+      const binaryPath = path.join(
+        commitlintRunDirectory,
+        'node_modules/.bin/commitlint',
+      );
+      fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
+      fs.writeFileSync(binaryPath, '#!/usr/bin/env bash\nexit 0\n', {
+        mode: 0o755,
+      });
+
+      const outcome = runInstallStepIn(commitlintRunDirectory, sandbox);
+
+      expect(outcome.status).toBe(0);
+      expect(outcome.stdout).toContain('commitlint restored from cache');
+      expect(fs.existsSync(sandbox.npmLogPath)).toBe(false);
+    } finally {
+      fs.rmSync(sandbox.sandboxDir, { recursive: true, force: true });
+    }
+  });
+
+  test('installs @commitlint/cli and @commitlint/config-conventional with npm when the restored cache lacks the binary', () => {
+    const sandbox = createFakeNpmSandbox('exit 0');
+    try {
+      const commitlintRunDirectory = path.join(
+        sandbox.sandboxDir,
+        'commitlint-run',
+      );
+
+      const outcome = runInstallStepIn(commitlintRunDirectory, sandbox);
+
+      expect(outcome.status).toBe(0);
+      expect(fs.readFileSync(sandbox.npmLogPath, 'utf8')).toBe(
+        [
+          'init -y',
+          'install --no-fund --save-dev @commitlint/cli @commitlint/config-conventional',
+          '',
+        ].join('\n'),
+      );
+    } finally {
+      fs.rmSync(sandbox.sandboxDir, { recursive: true, force: true });
+    }
+  });
 });
