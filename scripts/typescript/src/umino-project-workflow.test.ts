@@ -117,6 +117,7 @@ type SimulatedGithubEvent = {
   repository?: string;
   actor?: string;
   pullRequestAuthorLogin?: string | null;
+  pullRequestChecksInRepositoryCi?: string;
 };
 
 const extractStepBlockText = (
@@ -189,6 +190,10 @@ const substituteGithubEventIdentifiers = (
     .replace(
       /github\.actor/g,
       event.actor === undefined ? 'undefined' : JSON.stringify(event.actor),
+    )
+    .replace(
+      /vars\.PULL_REQUEST_CHECKS_IN_REPOSITORY_CI/g,
+      JSON.stringify(event.pullRequestChecksInRepositoryCi ?? ''),
     );
 
 const isBooleanValue = (value: unknown): value is boolean =>
@@ -361,6 +366,46 @@ describe('umino-project.yml workflow', () => {
         })),
       );
     });
+
+    const variableIndependenceCases: {
+      name: string;
+      event: SimulatedGithubEvent;
+    }[] = [
+      {
+        name: 'pull_request opened event',
+        event: {
+          ...baseSimulatedEvent,
+          eventName: 'pull_request',
+          issueState: null,
+          pullRequestState: 'open',
+          action: 'opened',
+          pullRequestAuthorLogin: 'HiromiShikata',
+        },
+      },
+      {
+        name: 'issues opened event',
+        event: baseSimulatedEvent,
+      },
+    ];
+
+    test.each(variableIndependenceCases)(
+      'gives the same result with PULL_REQUEST_CHECKS_IN_REPOSITORY_CI unset and true for $name',
+      ({ event }) => {
+        const resultWhenVariableUnset = evaluateIfConditionForSimulatedEvent(
+          uminoJobIfCondition,
+          event,
+        );
+        const resultWhenVariableTrue = evaluateIfConditionForSimulatedEvent(
+          uminoJobIfCondition,
+          { ...event, pullRequestChecksInRepositoryCi: 'true' },
+        );
+
+        expect({
+          variableUnset: resultWhenVariableUnset,
+          variableTrue: resultWhenVariableTrue,
+        }).toEqual({ variableUnset: true, variableTrue: true });
+      },
+    );
   });
 
   describe('check_pull_requests_to_link_issues job condition', () => {
@@ -467,6 +512,57 @@ describe('umino-project.yml workflow', () => {
 
       expect(conditionResult).toBe(false);
     });
+
+    const pullRequestActionCases: {
+      action: string;
+      runsWhenVariableIsNotTrue: boolean;
+    }[] = [
+      { action: 'opened', runsWhenVariableIsNotTrue: false },
+      { action: 'reopened', runsWhenVariableIsNotTrue: true },
+      { action: 'review_requested', runsWhenVariableIsNotTrue: false },
+      { action: 'labeled', runsWhenVariableIsNotTrue: false },
+      { action: 'edited', runsWhenVariableIsNotTrue: true },
+      { action: 'synchronize', runsWhenVariableIsNotTrue: true },
+    ];
+
+    const repositoryVariableCases = pullRequestActionCases.flatMap(
+      ({ action, runsWhenVariableIsNotTrue }) => [
+        {
+          name: `pull_request ${action} with PULL_REQUEST_CHECKS_IN_REPOSITORY_CI unset`,
+          action,
+          pullRequestChecksInRepositoryCi: undefined,
+          expectedRun: runsWhenVariableIsNotTrue,
+        },
+        {
+          name: `pull_request ${action} with PULL_REQUEST_CHECKS_IN_REPOSITORY_CI false`,
+          action,
+          pullRequestChecksInRepositoryCi: 'false',
+          expectedRun: runsWhenVariableIsNotTrue,
+        },
+        {
+          name: `pull_request ${action} with PULL_REQUEST_CHECKS_IN_REPOSITORY_CI true`,
+          action,
+          pullRequestChecksInRepositoryCi: 'true',
+          expectedRun: false,
+        },
+      ],
+    );
+
+    test.each(repositoryVariableCases)(
+      '$name evaluates the job condition to $expectedRun',
+      ({ action, pullRequestChecksInRepositoryCi, expectedRun }) => {
+        const conditionResult = evaluateIfConditionForSimulatedEvent(
+          checkJobIfCondition,
+          {
+            ...baseSimulatedEvent,
+            action,
+            pullRequestChecksInRepositoryCi,
+          },
+        );
+
+        expect(conditionResult).toBe(expectedRun);
+      },
+    );
   });
 
   describe('status revert steps condition', () => {
