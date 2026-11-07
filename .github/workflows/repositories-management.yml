@@ -71,6 +71,7 @@ jobs:
           FILES_TO_REMOVE=(
             ".github/workflows/create-pr.yml"
             "scripts/enable-auto-merge-error-handler.sh"
+            "scripts/enable-auto-merge-error-handler.test.ts"
             "scripts/get-pr-node-id-with-retry.sh"
             ".github/workflows/close-manual-prs.yml"
             )
