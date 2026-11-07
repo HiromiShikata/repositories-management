@@ -2167,14 +2167,18 @@ describe('update-repos FILES_TO_REMOVE', () => {
     'scripts/enable-auto-merge-error-handler.sh',
     'scripts/get-pr-node-id-with-retry.sh',
     '.github/workflows/close-manual-prs.yml',
-  ])('%s is listed in FILES_TO_REMOVE and not in FILES_TO_SYNC', (removedFilePath) => {
-    const removed = runArrayDeclaration('FILES_TO_REMOVE');
-    expect(removed.status).toBe(0);
-    expect(removed.stdout.split('\n')).toContain(removedFilePath);
-    const synced = runArrayDeclaration('FILES_TO_SYNC');
-    expect(synced.status).toBe(0);
-    expect(synced.stdout.split('\n')).not.toContain(removedFilePath);
-  });
+    'scripts/enable-auto-merge-error-handler.test.ts',
+  ])(
+    '%s is listed in FILES_TO_REMOVE and not in FILES_TO_SYNC',
+    (removedFilePath) => {
+      const removed = runArrayDeclaration('FILES_TO_REMOVE');
+      expect(removed.status).toBe(0);
+      expect(removed.stdout.split('\n')).toContain(removedFilePath);
+      const synced = runArrayDeclaration('FILES_TO_SYNC');
+      expect(synced.status).toBe(0);
+      expect(synced.stdout.split('\n')).not.toContain(removedFilePath);
+    },
+  );
 });
 
 const REPO_ROOT = path.join(__dirname, '../../..');
