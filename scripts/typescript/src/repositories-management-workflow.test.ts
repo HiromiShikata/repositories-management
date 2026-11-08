@@ -2674,6 +2674,7 @@ type FallbackCase = {
   putFails: FallbackScenario;
   putAndPatchFail: FallbackScenario;
   expectedContexts: string[];
+  fallbackApplies: boolean;
 };
 
 const ciVariableScenario: FallbackScenario = {
@@ -2700,6 +2701,7 @@ const fallbackCases: FallbackCase[] = [
       serverErrorMethods: ['PUT', 'PATCH'],
     },
     expectedContexts: requiredStatusCheckContexts,
+    fallbackApplies: false,
   },
   {
     description:
@@ -2717,6 +2719,7 @@ const fallbackCases: FallbackCase[] = [
       serverErrorMethods: ['PUT', 'PATCH'],
     },
     expectedContexts: repositoryCiContexts,
+    fallbackApplies: true,
   },
   {
     description:
@@ -2732,12 +2735,20 @@ const fallbackCases: FallbackCase[] = [
       serverErrorMethods: ['PATCH'],
     },
     expectedContexts: requiredStatusCheckContexts,
+    fallbackApplies: false,
   },
 ];
 
+const fallbackApplyingCases = fallbackCases.filter(
+  (fallbackCase) => fallbackCase.fallbackApplies,
+);
+const nonFallbackCases = fallbackCases.filter(
+  (fallbackCase) => !fallbackCase.fallbackApplies,
+);
+
 describe('repository-config required status checks fallback when the protection update fails', () => {
-  test('a failed protection update is followed by a required status checks PATCH with strict false and the repository contexts', () => {
-    for (const fallbackCase of fallbackCases) {
+  test('a failed protection update of a repository whose required contexts include ci is followed by a required status checks PATCH with strict false and the repository contexts', () => {
+    for (const fallbackCase of fallbackApplyingCases) {
       const repositoryName = fallbackCase.repository.name;
       const result = runStepScriptsExpectingSuccess({
         stepNames: [helperStepName, branchProtectionStepName],
@@ -2770,8 +2781,47 @@ describe('repository-config required status checks fallback when the protection 
     }
   });
 
+  test('a failed protection update of a repository whose required contexts do not include ci sends no required status checks PATCH and is listed as failed exactly as today', () => {
+    for (const fallbackCase of nonFallbackCases) {
+      const repositoryName = fallbackCase.repository.name;
+      const result = runStepScriptsExpectingFailure({
+        stepNames: [helperStepName, branchProtectionStepName],
+        repositories: [fallbackCase.repository],
+        ...fallbackCase.putFails,
+      });
+      expect({
+        case: fallbackCase.description,
+        requests: writeRequests(result).map(
+          (request) => `${request.method} ${request.url}`,
+        ),
+      }).toEqual({
+        case: fallbackCase.description,
+        requests: [`PUT ${protectionUrl(repositoryName, fallbackBranchName)}`],
+      });
+      expect({
+        case: fallbackCase.description,
+        failedUpdateWarning: result.output.includes(
+          `WARNING: failed to update branch protection for ${repositoryName}; continuing with the remaining repositories`,
+        ),
+        requiredContextsWarning: result.output.includes(
+          `WARNING: ${repositoryName} must report every required status check context: ${fallbackCase.expectedContexts.join(', ')}`,
+        ),
+        listedAsFailed: result.output.includes(`  - ${repositoryName}`),
+        onlyRequiredStatusChecksWarningCount:
+          onlyRequiredStatusChecksWarningLines(result.output, repositoryName)
+            .length,
+      }).toEqual({
+        case: fallbackCase.description,
+        failedUpdateWarning: true,
+        requiredContextsWarning: true,
+        listedAsFailed: true,
+        onlyRequiredStatusChecksWarningCount: 0,
+      });
+    }
+  });
+
   test('a successful required status checks PATCH counts the repository as configured and warns that only its required status checks were updated', () => {
-    for (const fallbackCase of fallbackCases) {
+    for (const fallbackCase of fallbackApplyingCases) {
       const repositoryName = fallbackCase.repository.name;
       const result = runStepScriptsExpectingSuccess({
         stepNames: [helperStepName, branchProtectionStepName],
@@ -2797,7 +2847,7 @@ describe('repository-config required status checks fallback when the protection 
   });
 
   test('a required status checks PATCH that also fails lists the repository as failed exactly as a failed protection update is listed today', () => {
-    for (const fallbackCase of fallbackCases) {
+    for (const fallbackCase of fallbackApplyingCases) {
       const repositoryName = fallbackCase.repository.name;
       const result = runStepScriptsExpectingFailure({
         stepNames: [helperStepName, branchProtectionStepName],

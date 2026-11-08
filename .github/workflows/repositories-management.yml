@@ -502,14 +502,17 @@ jobs:
                 sleep 5s
                 continue
               fi
-              REQUIRED_CONTEXTS_JSON="$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -c 'rtrimstr("\n") | split("\n")')"
-              REQUIRED_STATUS_CHECKS_PAYLOAD="$(jq -cn --argjson contexts "$REQUIRED_CONTEXTS_JSON" '{strict: false, contexts: $contexts}')"
-              gh_admin_api PATCH "https://api.github.com/repos/$ORG_NAME/$REPO/branches/$DEFAULT_BRANCH/protection/required_status_checks" "$REQUIRED_STATUS_CHECKS_PAYLOAD" "200" > /dev/null && PATCH_EXIT_CODE=0 || PATCH_EXIT_CODE=$?
-              if [ "$PATCH_EXIT_CODE" -eq 0 ]; then
-                echo "WARNING: the full branch protection update failed for $REPO, so only its required status checks were updated to: $REQUIRED_CONTEXTS"
-                CONFIGURED_COUNT=$((CONFIGURED_COUNT + 1))
-                sleep 5s
-                continue
+              # The fallback applies only to repositories that report the ci context (PULL_REQUEST_CHECKS_IN_REPOSITORY_CI=true); for every other repository a failed full update keeps its failure handling.
+              if printf '%s\n' "$REQUIRED_CONTEXT_LINES" | grep -Fxq 'ci'; then
+                REQUIRED_CONTEXTS_JSON="$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -c 'rtrimstr("\n") | split("\n")')"
+                REQUIRED_STATUS_CHECKS_PAYLOAD="$(jq -cn --argjson contexts "$REQUIRED_CONTEXTS_JSON" '{strict: false, contexts: $contexts}')"
+                gh_admin_api PATCH "https://api.github.com/repos/$ORG_NAME/$REPO/branches/$DEFAULT_BRANCH/protection/required_status_checks" "$REQUIRED_STATUS_CHECKS_PAYLOAD" "200" > /dev/null && PATCH_EXIT_CODE=0 || PATCH_EXIT_CODE=$?
+                if [ "$PATCH_EXIT_CODE" -eq 0 ]; then
+                  echo "WARNING: the full branch protection update failed for $REPO, so only its required status checks were updated to: $REQUIRED_CONTEXTS"
+                  CONFIGURED_COUNT=$((CONFIGURED_COUNT + 1))
+                  sleep 5s
+                  continue
+                fi
               fi
               echo "WARNING: failed to update branch protection for $REPO; continuing with the remaining repositories"
               echo "WARNING: $REPO must report every required status check context: $REQUIRED_CONTEXTS"
