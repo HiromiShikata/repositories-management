@@ -266,6 +266,16 @@ for plan_gated_repository in $STUB_PLAN_GATED_REPOSITORIES; do
       ;;
   esac
 done
+if [ "$method" = "PUT" ]; then
+  for plan_gated_put_repository in $STUB_PLAN_GATED_PUT_REPOSITORIES; do
+    case "$request_url" in
+      *"/repos/$STUB_ORGANIZATION_NAME/$plan_gated_put_repository/branches/"*"/protection")
+        status="403"
+        response_body='${planRestrictionResponseBody}'
+        ;;
+    esac
+  done
+fi
 server_error_methods_apply="false"
 if [ -z "$STUB_SERVER_ERROR_METHODS" ]; then
   server_error_methods_apply="true"
@@ -355,6 +365,7 @@ type StepRunRequest = {
   repositories: RepositoryListEntry[];
   getResponseBody?: string;
   planGatedRepositories?: string[];
+  planGatedPutRepositories?: string[];
   serverErrorRepositories?: string[];
   serverErrorMethods?: string[];
   alreadyRequiredContexts?: string[];
@@ -371,6 +382,7 @@ const runStepScripts = ({
   repositories,
   getResponseBody = emptyRulesetListResponse,
   planGatedRepositories = [],
+  planGatedPutRepositories = [],
   serverErrorRepositories = [],
   serverErrorMethods = [],
   alreadyRequiredContexts,
@@ -470,6 +482,7 @@ const runStepScripts = ({
       STUB_GH_API_LOG: ghApiLogPath,
       STUB_ORGANIZATION_NAME: organizationName,
       STUB_PLAN_GATED_REPOSITORIES: planGatedRepositories.join(' '),
+      STUB_PLAN_GATED_PUT_REPOSITORIES: planGatedPutRepositories.join(' '),
       STUB_UNPROTECTED_REPOSITORIES: unprotectedRepositories.join(' '),
       STUB_SERVER_ERROR_REPOSITORIES: serverErrorRepositories.join(' '),
       STUB_SERVER_ERROR_METHODS: serverErrorMethods.join(' '),
@@ -2621,5 +2634,244 @@ describe('repository-config required contexts per repository variable', () => {
     expect(result.output).toContain(
       `WARNING: ${unprotectedRepository.name} neither already requires nor reports on every open pull request head: ${withheldContexts}\n`,
     );
+  });
+});
+
+const fallbackBranchName = 'main';
+
+const requiredStatusChecksUrl = (
+  repositoryName: string,
+  branchName: string,
+): string =>
+  `${protectionUrl(repositoryName, branchName)}/required_status_checks`;
+
+const requiredStatusChecksFallbackPayload = (contexts: string[]): unknown => ({
+  strict: false,
+  contexts,
+});
+
+const onlyRequiredStatusChecksWarningLines = (
+  output: string,
+  repositoryName: string,
+): string[] =>
+  output
+    .split('\n')
+    .filter(
+      (line) =>
+        line.startsWith('WARNING:') &&
+        line.includes(repositoryName) &&
+        /\bonly\b/.test(line) &&
+        line.includes('required status checks') &&
+        /\bupdated\b/.test(line),
+    );
+
+type FallbackScenario = Omit<StepRunRequest, 'stepNames' | 'repositories'>;
+
+type FallbackCase = {
+  description: string;
+  repository: RepositoryListEntry;
+  succeeding: FallbackScenario;
+  putFails: FallbackScenario;
+  putAndPatchFail: FallbackScenario;
+  expectedContexts: string[];
+};
+
+const ciVariableScenario: FallbackScenario = {
+  repositoryVariables: {
+    [repositoryWithCiVariable.name]: ciVariableEnabled,
+  },
+  unprotectedRepositories: [repositoryWithCiVariable.name],
+  openPullRequestCheckRuns: {
+    [repositoryWithCiVariable.name]: [['ci', 'umino-job']],
+  },
+};
+
+const fallbackCases: FallbackCase[] = [
+  {
+    description: 'a repository on the default required status check contexts',
+    repository: mainDefaultBranchRepository,
+    succeeding: {},
+    putFails: {
+      serverErrorRepositories: [mainDefaultBranchRepository.name],
+      serverErrorMethods: ['PUT'],
+    },
+    putAndPatchFail: {
+      serverErrorRepositories: [mainDefaultBranchRepository.name],
+      serverErrorMethods: ['PUT', 'PATCH'],
+    },
+    expectedContexts: requiredStatusCheckContexts,
+  },
+  {
+    description:
+      'a repository whose PULL_REQUEST_CHECKS_IN_REPOSITORY_CI variable is true',
+    repository: repositoryWithCiVariable,
+    succeeding: ciVariableScenario,
+    putFails: {
+      ...ciVariableScenario,
+      serverErrorRepositories: [repositoryWithCiVariable.name],
+      serverErrorMethods: ['PUT'],
+    },
+    putAndPatchFail: {
+      ...ciVariableScenario,
+      serverErrorRepositories: [repositoryWithCiVariable.name],
+      serverErrorMethods: ['PUT', 'PATCH'],
+    },
+    expectedContexts: repositoryCiContexts,
+  },
+  {
+    description:
+      'a private repository that is not a fork, whose protection update is refused with the plan restriction, which is not a permanent refusal for it',
+    repository: privateNonForkRepository,
+    succeeding: {},
+    putFails: {
+      planGatedPutRepositories: [privateNonForkRepository.name],
+    },
+    putAndPatchFail: {
+      planGatedPutRepositories: [privateNonForkRepository.name],
+      serverErrorRepositories: [privateNonForkRepository.name],
+      serverErrorMethods: ['PATCH'],
+    },
+    expectedContexts: requiredStatusCheckContexts,
+  },
+];
+
+describe('repository-config required status checks fallback when the protection update fails', () => {
+  test('a failed protection update is followed by a required status checks PATCH with strict false and the repository contexts', () => {
+    for (const fallbackCase of fallbackCases) {
+      const repositoryName = fallbackCase.repository.name;
+      const result = runStepScriptsExpectingSuccess({
+        stepNames: [helperStepName, branchProtectionStepName],
+        repositories: [fallbackCase.repository],
+        ...fallbackCase.putFails,
+      });
+      const writes = writeRequests(result);
+      expect({
+        case: fallbackCase.description,
+        requests: writes.map((request) => `${request.method} ${request.url}`),
+      }).toEqual({
+        case: fallbackCase.description,
+        requests: [
+          `PUT ${protectionUrl(repositoryName, fallbackBranchName)}`,
+          `PATCH ${requiredStatusChecksUrl(repositoryName, fallbackBranchName)}`,
+        ],
+      });
+      const patch = writes[1];
+      expect({
+        case: fallbackCase.description,
+        authorization: patch.authorization,
+        payload: requestPayload(patch),
+      }).toEqual({
+        case: fallbackCase.description,
+        authorization: `token ${patCredential}`,
+        payload: requiredStatusChecksFallbackPayload(
+          fallbackCase.expectedContexts,
+        ),
+      });
+    }
+  });
+
+  test('a successful required status checks PATCH counts the repository as configured and warns that only its required status checks were updated', () => {
+    for (const fallbackCase of fallbackCases) {
+      const repositoryName = fallbackCase.repository.name;
+      const result = runStepScriptsExpectingSuccess({
+        stepNames: [helperStepName, branchProtectionStepName],
+        repositories: [fallbackCase.repository],
+        ...fallbackCase.putFails,
+      });
+      expect({
+        case: fallbackCase.description,
+        onlyRequiredStatusChecksWarningCount:
+          onlyRequiredStatusChecksWarningLines(result.output, repositoryName)
+            .length,
+        listedAsFailed: result.output.includes(`  - ${repositoryName}`),
+        configured: result.output.includes(
+          'Configured 1 of 1 repositories for branch protection',
+        ),
+      }).toEqual({
+        case: fallbackCase.description,
+        onlyRequiredStatusChecksWarningCount: 1,
+        listedAsFailed: false,
+        configured: true,
+      });
+    }
+  });
+
+  test('a required status checks PATCH that also fails lists the repository as failed exactly as a failed protection update is listed today', () => {
+    for (const fallbackCase of fallbackCases) {
+      const repositoryName = fallbackCase.repository.name;
+      const result = runStepScriptsExpectingFailure({
+        stepNames: [helperStepName, branchProtectionStepName],
+        repositories: [fallbackCase.repository],
+        ...fallbackCase.putAndPatchFail,
+      });
+      expect({
+        case: fallbackCase.description,
+        requests: writeRequests(result).map(
+          (request) => `${request.method} ${request.url}`,
+        ),
+      }).toEqual({
+        case: fallbackCase.description,
+        requests: [
+          `PUT ${protectionUrl(repositoryName, fallbackBranchName)}`,
+          `PATCH ${requiredStatusChecksUrl(repositoryName, fallbackBranchName)}`,
+        ],
+      });
+      expect({
+        case: fallbackCase.description,
+        failedUpdateWarning: result.output.includes(
+          `WARNING: failed to update branch protection for ${repositoryName}; continuing with the remaining repositories`,
+        ),
+        requiredContextsWarning: result.output.includes(
+          `WARNING: ${repositoryName} must report every required status check context: ${fallbackCase.expectedContexts.join(', ')}`,
+        ),
+        listedAsFailed: result.output.includes(`  - ${repositoryName}`),
+        onlyRequiredStatusChecksWarningCount:
+          onlyRequiredStatusChecksWarningLines(result.output, repositoryName)
+            .length,
+      }).toEqual({
+        case: fallbackCase.description,
+        failedUpdateWarning: true,
+        requiredContextsWarning: true,
+        listedAsFailed: true,
+        onlyRequiredStatusChecksWarningCount: 0,
+      });
+    }
+  });
+
+  test('a plan-gate refusal of the protection update is skipped as today and sends no required status checks PATCH', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [privateForkRepository, mainDefaultBranchRepository],
+      planGatedPutRepositories: [privateForkRepository.name],
+    });
+    expect(requestSummaries(result)).toEqual([
+      `GET ${protectionUrl(privateForkRepository.name, fallbackBranchName)}`,
+      `PUT ${protectionUrl(privateForkRepository.name, fallbackBranchName)}`,
+      `GET ${protectionUrl(mainDefaultBranchRepository.name, fallbackBranchName)}`,
+      `PUT ${protectionUrl(mainDefaultBranchRepository.name, fallbackBranchName)}`,
+    ]);
+    expect(result.output).toContain(
+      `EXPECTED SKIP: ${privateForkRepository.name} is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently`,
+    );
+  });
+
+  test('a successful protection update sends no required status checks PATCH', () => {
+    for (const fallbackCase of fallbackCases) {
+      const repositoryName = fallbackCase.repository.name;
+      const result = runStepScriptsExpectingSuccess({
+        stepNames: [helperStepName, branchProtectionStepName],
+        repositories: [fallbackCase.repository],
+        ...fallbackCase.succeeding,
+      });
+      expect({
+        case: fallbackCase.description,
+        requests: writeRequests(result).map(
+          (request) => `${request.method} ${request.url}`,
+        ),
+      }).toEqual({
+        case: fallbackCase.description,
+        requests: [`PUT ${protectionUrl(repositoryName, fallbackBranchName)}`],
+      });
+    }
   });
 });
