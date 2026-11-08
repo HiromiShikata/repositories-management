@@ -502,7 +502,6 @@ jobs:
                 sleep 5s
                 continue
               fi
-              # The fallback applies only to repositories that report the ci context (PULL_REQUEST_CHECKS_IN_REPOSITORY_CI=true); for every other repository a failed full update keeps its failure handling.
               if printf '%s\n' "$REQUIRED_CONTEXT_LINES" | grep -Fxq 'ci'; then
                 REQUIRED_CONTEXTS_JSON="$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -c 'rtrimstr("\n") | split("\n")')"
                 REQUIRED_STATUS_CHECKS_PAYLOAD="$(jq -cn --argjson contexts "$REQUIRED_CONTEXTS_JSON" '{strict: false, contexts: $contexts}')"
