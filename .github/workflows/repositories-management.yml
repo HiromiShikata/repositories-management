@@ -237,6 +237,7 @@ jobs:
       - uses: step-security/harden-runner@v2
         with:
           egress-policy: audit
+      - uses: actions/checkout@v7
       - name: Prepare rate-limit-aware admin API helper
         run: |
           cat > /tmp/gh_admin_api.sh <<'HELPER'
@@ -327,10 +328,15 @@ jobs:
             body="$(gh_admin_api GET "https://api.github.com/repos/$repository_slug/branches/$default_branch/protection" "" "200 404")" || return $?
             printf '%s' "$body" | jq -r 'if type == "object" and (.required_status_checks | type) == "object" then ((.required_status_checks.contexts // [])[]) else empty end'
           }
+          PULL_REQUEST_ACTIVITY_CUTOFF="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
           status_check_contexts_every_open_pull_request_reports() {
             local repository_slug="$1"
             local head_shas head_sha reported_contexts common_contexts="" is_first_pull_request="true"
-            head_shas="$(gh api "repos/$repository_slug/pulls?state=open&per_page=100" --jq '.[].head.sha')" || return 1
+            local activity_cutoff="${2:-}" head_jq='.[].head.sha'
+            if [ -n "$activity_cutoff" ]; then
+              head_jq=".[] | select(.updated_at >= \"$activity_cutoff\") | .head.sha"
+            fi
+            head_shas="$(gh api "repos/$repository_slug/pulls?state=open&per_page=100" --jq "$head_jq")" || return 1
             if [ -z "$head_shas" ]; then
               return 0
             fi
@@ -347,7 +353,7 @@ jobs:
             printf '%s\n' "$common_contexts"
           }
           unproven_required_status_check_contexts() {
-            local repository_slug="$1" already_required_contexts="$2" required_contexts="$3"
+            local repository_slug="$1" already_required_contexts="$2" required_contexts="$3" activity_cutoff="${4:-}"
             local missing_contexts="" reported_contexts="" unproven_contexts="" context
             while IFS= read -r context; do
               [ -z "$context" ] && continue
@@ -359,7 +365,7 @@ jobs:
             if [ -z "$missing_contexts" ]; then
               return 0
             fi
-            reported_contexts="$(status_check_contexts_every_open_pull_request_reports "$repository_slug")" || return 1
+            reported_contexts="$(status_check_contexts_every_open_pull_request_reports "$repository_slug" "$activity_cutoff")" || return 1
             while IFS= read -r context; do
               [ -z "$context" ] && continue
               if printf '%s\n' "$reported_contexts" | grep -Fxq "$context"; then
@@ -410,8 +416,6 @@ jobs:
           ORG_NAME="${{ env.ORG_NAME }}"
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived,isPrivate,isFork,defaultBranchRef | jq -r '.[] | select(.isArchived == false and (.name | startswith("test-") | not)) | [.name, (.isPrivate | tostring), (.isFork | tostring), .defaultBranchRef.name] | @tsv')
           BRANCH_PROTECTION_PAYLOAD='{ "required_status_checks": { "strict": false, "contexts": ["commit-lint", "Check linked issues in pull requests", "umino-job"] }, "enforce_admins": false, "required_pull_request_reviews": { "required_approving_review_count": 0, "require_code_owner_reviews": false }, "restrictions": null, "required_linear_history": false, "allow_force_pushes": false, "allow_deletions": false, "required_conversation_resolution": true }'
-          REQUIRED_CONTEXTS="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -r '.required_status_checks.contexts | join(", ")')"
-          REQUIRED_CONTEXT_LINES="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -r '.required_status_checks.contexts[]')"
           # termux-app has classic branch protection disabled repository-wide because its default branch is guarded by a repository ruleset instead of classic branch protection, so this request can never succeed there.
           RULESET_PROTECTED_REPOSITORIES="termux-app"
           # deepmerge-yaml is a public fork of an upstream project this account tracks rather than develops, so its continuous integration is the upstream project's and reports only Build and Lint; this request would succeed there and would permanently block its every pull request against six required contexts that will never report.
@@ -459,7 +463,24 @@ jobs:
               sleep 5s
               continue
             fi
-            UNPROVEN_CONTEXTS="$(unproven_required_status_check_contexts "$ORG_NAME/$REPO" "$ALREADY_REQUIRED_CONTEXTS" "$REQUIRED_CONTEXT_LINES")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            REQUIRED_CONTEXT_LINES="$("$GITHUB_WORKSPACE/scripts/branch-protection-required-contexts.sh" "$ORG_NAME/$REPO")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            if [ "$REQUEST_EXIT_CODE" -ne 0 ] || [ -z "$REQUIRED_CONTEXT_LINES" ]; then
+              if printf '%s\n' "$ALREADY_REQUIRED_CONTEXTS" | grep -Fxq 'ci'; then
+                echo "WARNING: could not read the PULL_REQUEST_CHECKS_IN_REPOSITORY_CI variable of $REPO, and it already requires the ci status check, so it is not reconfigured; continuing with the remaining repositories"
+                FAILED_REPOS="$FAILED_REPOS $REPO"
+                sleep 5s
+                continue
+              fi
+              echo "WARNING: could not read the PULL_REQUEST_CHECKS_IN_REPOSITORY_CI variable of $REPO; applying the default required status check contexts"
+              REQUIRED_CONTEXT_LINES="$(printf '%s\n' "$BRANCH_PROTECTION_PAYLOAD" | jq -r '.required_status_checks.contexts[]')"
+            fi
+            REQUIRED_CONTEXTS="$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -r 'rtrimstr("\n") | split("\n") | join(", ")')"
+            ACTIVITY_CUTOFF=""
+            if printf '%s\n' "$REQUIRED_CONTEXT_LINES" | grep -Fxq 'ci'; then
+              ACTIVITY_CUTOFF="$PULL_REQUEST_ACTIVITY_CUTOFF"
+            fi
+            REPO_PAYLOAD="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -c --argjson contexts "$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -c 'rtrimstr("\n") | split("\n")')" '.required_status_checks.contexts = $contexts')"
+            UNPROVEN_CONTEXTS="$(unproven_required_status_check_contexts "$ORG_NAME/$REPO" "$ALREADY_REQUIRED_CONTEXTS" "$REQUIRED_CONTEXT_LINES" "$ACTIVITY_CUTOFF")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
               echo "WARNING: failed to establish which status check contexts $REPO reports; continuing with the remaining repositories"
               FAILED_REPOS="$FAILED_REPOS $REPO"
@@ -474,7 +495,7 @@ jobs:
               continue
             fi
             echo "Updating branch protection for $REPO on default branch $DEFAULT_BRANCH"
-            gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/branches/$DEFAULT_BRANCH/protection" "$BRANCH_PROTECTION_PAYLOAD" "200" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            gh_admin_api PUT "https://api.github.com/repos/$ORG_NAME/$REPO/branches/$DEFAULT_BRANCH/protection" "$REPO_PAYLOAD" "200" > /dev/null && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
               if is_permanent_plan_gate_refusal "$REQUEST_EXIT_CODE" "$IS_PRIVATE" "$IS_FORK"; then
                 echo "EXPECTED SKIP: $REPO is a private fork, so this feature is gated by the plan of its fork network and the API refuses it permanently"
