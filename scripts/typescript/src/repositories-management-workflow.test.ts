@@ -2477,29 +2477,42 @@ describe('repository-config required contexts per repository variable', () => {
     ]);
   });
 
-  test('a repository whose variable read fails gets no write, is warned and listed as failed, and the rest of the fleet is still protected', () => {
-    const result = runStepScripts({
+  test('a repository without the variable whose variable read fails and which does not require ci is protected with the default contexts, as today', () => {
+    const result = runStepScriptsExpectingSuccess({
       stepNames: [helperStepName, branchProtectionStepName],
-      repositories: [
-        repositoryWithUnreadableVariable,
-        mainDefaultBranchRepository,
-      ],
+      repositories: [repositoryWithUnreadableVariable],
       repositoryVariables: {
         [repositoryWithUnreadableVariable.name]: { status: 'error' },
       },
     });
-    expect(result.status).not.toBe(0);
     expect(writeRequests(result).map((request) => request.url)).toEqual([
-      protectionUrl(mainDefaultBranchRepository.name, 'main'),
+      protectionUrl(repositoryWithUnreadableVariable.name, 'main'),
+    ]);
+    expect(sentBranchProtectionBodies(result)).toEqual([
+      branchProtectionPayloadWithContexts(requiredStatusCheckContexts),
     ]);
     expect(result.output).toContain(
-      `WARNING: could not read the required status check contexts for ${repositoryWithUnreadableVariable.name}, so it is not protected`,
+      `WARNING: could not read the PULL_REQUEST_CHECKS_IN_REPOSITORY_CI variable of ${repositoryWithUnreadableVariable.name}; applying the default required status check contexts`,
+    );
+  });
+
+  test('a repository whose variable read fails and which already requires ci gets no write, is warned and listed as failed', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [repositoryWithUnreadableVariable],
+      repositoryVariables: {
+        [repositoryWithUnreadableVariable.name]: { status: 'error' },
+      },
+      alreadyRequiredContexts: repositoryCiContexts,
+    });
+    expect(writeRequests(result)).toEqual([]);
+    expect(result.output).toContain(
+      `WARNING: could not read the PULL_REQUEST_CHECKS_IN_REPOSITORY_CI variable of ${repositoryWithUnreadableVariable.name}, and it already requires the ci status check, so it is not reconfigured`,
     );
     expect(result.output).toContain(
       `  - ${repositoryWithUnreadableVariable.name}`,
     );
   });
-
   test('an open pull request idle for more than seven days that lacks the newly required context does not block protection', () => {
     const result = runStepScriptsExpectingSuccess({
       stepNames: [helperStepName, branchProtectionStepName],

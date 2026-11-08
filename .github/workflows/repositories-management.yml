@@ -451,19 +451,6 @@ jobs:
               FAILED_REPOS="$FAILED_REPOS $REPO"
               continue
             fi
-            REQUIRED_CONTEXT_LINES="$("$GITHUB_WORKSPACE/scripts/branch-protection-required-contexts.sh" "$ORG_NAME/$REPO")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
-            if [ "$REQUEST_EXIT_CODE" -ne 0 ] || [ -z "$REQUIRED_CONTEXT_LINES" ]; then
-              echo "WARNING: could not read the required status check contexts for $REPO, so it is not protected; continuing with the remaining repositories"
-              FAILED_REPOS="$FAILED_REPOS $REPO"
-              sleep 5s
-              continue
-            fi
-            REQUIRED_CONTEXTS="$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -r 'rtrimstr("\n") | split("\n") | join(", ")')"
-            ACTIVITY_CUTOFF=""
-            if printf '%s\n' "$REQUIRED_CONTEXT_LINES" | grep -Fxq 'ci'; then
-              ACTIVITY_CUTOFF="$PULL_REQUEST_ACTIVITY_CUTOFF"
-            fi
-            REPO_PAYLOAD="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -c --argjson contexts "$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -c 'rtrimstr("\n") | split("\n")')" '.required_status_checks.contexts = $contexts')"
             ALREADY_REQUIRED_CONTEXTS="$(already_required_status_check_contexts "$ORG_NAME/$REPO" "$DEFAULT_BRANCH")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
               if is_permanent_plan_gate_refusal "$REQUEST_EXIT_CODE" "$IS_PRIVATE" "$IS_FORK"; then
@@ -476,6 +463,23 @@ jobs:
               sleep 5s
               continue
             fi
+            REQUIRED_CONTEXT_LINES="$("$GITHUB_WORKSPACE/scripts/branch-protection-required-contexts.sh" "$ORG_NAME/$REPO")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            if [ "$REQUEST_EXIT_CODE" -ne 0 ] || [ -z "$REQUIRED_CONTEXT_LINES" ]; then
+              if printf '%s\n' "$ALREADY_REQUIRED_CONTEXTS" | grep -Fxq 'ci'; then
+                echo "WARNING: could not read the PULL_REQUEST_CHECKS_IN_REPOSITORY_CI variable of $REPO, and it already requires the ci status check, so it is not reconfigured; continuing with the remaining repositories"
+                FAILED_REPOS="$FAILED_REPOS $REPO"
+                sleep 5s
+                continue
+              fi
+              echo "WARNING: could not read the PULL_REQUEST_CHECKS_IN_REPOSITORY_CI variable of $REPO; applying the default required status check contexts"
+              REQUIRED_CONTEXT_LINES="$(printf '%s\n' "$BRANCH_PROTECTION_PAYLOAD" | jq -r '.required_status_checks.contexts[]')"
+            fi
+            REQUIRED_CONTEXTS="$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -r 'rtrimstr("\n") | split("\n") | join(", ")')"
+            ACTIVITY_CUTOFF=""
+            if printf '%s\n' "$REQUIRED_CONTEXT_LINES" | grep -Fxq 'ci'; then
+              ACTIVITY_CUTOFF="$PULL_REQUEST_ACTIVITY_CUTOFF"
+            fi
+            REPO_PAYLOAD="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -c --argjson contexts "$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -c 'rtrimstr("\n") | split("\n")')" '.required_status_checks.contexts = $contexts')"
             UNPROVEN_CONTEXTS="$(unproven_required_status_check_contexts "$ORG_NAME/$REPO" "$ALREADY_REQUIRED_CONTEXTS" "$REQUIRED_CONTEXT_LINES" "$ACTIVITY_CUTOFF")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
               echo "WARNING: failed to establish which status check contexts $REPO reports; continuing with the remaining repositories"
