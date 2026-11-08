@@ -1336,8 +1336,6 @@ describe('repository-config branch protection context-reporting precondition', (
     expect(writeRequests(result).map((request) => request.url)).toEqual([
       protectionUrl(mainDefaultBranchRepository.name, 'main'),
     ]);
-    // The repository's required-contexts variable is read before its protection
-    // is written; that read is not a pull request measurement.
     expect(
       result.readOnlyEndpoints.filter(
         (endpoint) => !endpoint.includes('/actions/variables/'),
