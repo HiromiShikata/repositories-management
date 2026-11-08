@@ -8,6 +8,7 @@ const workflowPath = path.join(
   '../../../.github/workflows/repositories-management.yml',
 );
 const workflowContent = fs.readFileSync(workflowPath, 'utf8');
+const repositoryRoot = path.join(__dirname, '../../..');
 
 const extractStepBlock = (stepName: string): string => {
   const stepStart = workflowContent.indexOf(`- name: ${stepName}`);
@@ -135,8 +136,8 @@ if [ "\${1:-}" = "api" ]; then
       repository="$(printf '%s' "$endpoint" | sed -E 's#^repos/[^/]+/([^/]+)/pulls.*#\\1#')"
       case "$jq_expression" in
         *.head.sha*)
-          jq -c --arg repository "$repository" \\
-            '(.[$repository] // []) | to_entries | map({head: {sha: ($repository + "-pull-request-" + (.key | tostring))}})' \\
+          jq -c --arg repository "$repository" --slurpfile updated "$STUB_OPEN_PULL_REQUEST_UPDATED_AT_JSON" \\
+            '(.[$repository] // []) | to_entries | map({head: {sha: ($repository + "-pull-request-" + (.key | tostring))}, updated_at: (($updated[0][$repository] // [])[.key] // "2099-01-01T00:00:00Z")})' \\
             "$STUB_OPEN_PULL_REQUEST_CHECK_RUNS_JSON" | jq -r "$jq_expression"
           ;;
         *)
@@ -159,6 +160,24 @@ if [ "\${1:-}" = "api" ]; then
       jq -c --arg repository "$repository" --argjson index "$pull_request_index" \\
         '{check_runs: (((.[$repository] // [])[$index]) // [] | map({name: .}))}' \\
         "$STUB_OPEN_PULL_REQUEST_CHECK_RUNS_JSON" | jq -r "$jq_expression"
+      exit 0
+      ;;
+    repos/*/actions/variables/*)
+      repository="$(printf '%s' "$endpoint" | sed -E 's#^repos/[^/]+/([^/]+)/actions/variables/.*#\\1#')"
+      variable_state="$(jq -c --arg repository "$repository" '.[$repository] // {status: "missing"}' "$STUB_REPOSITORY_VARIABLES_JSON")"
+      case "$(printf '%s' "$variable_state" | jq -r '.status')" in
+        found)
+          printf '%s\\n' "$variable_state" | jq -c '{name: "PULL_REQUEST_CHECKS_IN_REPOSITORY_CI", value: .value}' | jq -r "$jq_expression"
+          ;;
+        error)
+          echo "gh: Server Error (HTTP 500)" >&2
+          exit 1
+          ;;
+        *)
+          echo "gh: Not Found (HTTP 404)" >&2
+          exit 1
+          ;;
+      esac
       exit 0
       ;;
   esac
@@ -326,6 +345,11 @@ const emptyRulesetListResponse = '[]';
 
 type DependabotPullRequestEntry = { number: number; login: string };
 
+type RepositoryVariableState =
+  | { status: 'found'; value: string }
+  | { status: 'missing' }
+  | { status: 'error' };
+
 type StepRunRequest = {
   stepNames: string[];
   repositories: RepositoryListEntry[];
@@ -338,6 +362,8 @@ type StepRunRequest = {
   openPullRequestCheckRuns?: Record<string, string[][]>;
   dependabotPullRequests?: Record<string, DependabotPullRequestEntry[]>;
   pullRequestListingFailureRepositories?: string[];
+  repositoryVariables?: Record<string, RepositoryVariableState>;
+  openPullRequestUpdatedAt?: Record<string, string[]>;
 };
 
 const runStepScripts = ({
@@ -352,6 +378,8 @@ const runStepScripts = ({
   openPullRequestCheckRuns = {},
   dependabotPullRequests = {},
   pullRequestListingFailureRepositories = [],
+  repositoryVariables = {},
+  openPullRequestUpdatedAt = {},
 }: StepRunRequest): StepRunResult => {
   const sandbox = fs.mkdtempSync(
     path.join(os.tmpdir(), 'repositories-management-workflow-'),
@@ -402,6 +430,22 @@ const runStepScripts = ({
   );
   const ghApiLogPath = path.join(sandbox, 'gh-api.log');
   fs.writeFileSync(ghApiLogPath, '');
+  const repositoryVariablesPath = path.join(
+    sandbox,
+    'repository-variables.json',
+  );
+  fs.writeFileSync(
+    repositoryVariablesPath,
+    JSON.stringify(repositoryVariables),
+  );
+  const openPullRequestUpdatedAtPath = path.join(
+    sandbox,
+    'open-pull-request-updated-at.json',
+  );
+  fs.writeFileSync(
+    openPullRequestUpdatedAtPath,
+    JSON.stringify(openPullRequestUpdatedAt),
+  );
   const helperPath = path.join(sandbox, 'gh_admin_api.sh');
 
   const script = ['set -e', ...stepNames.map(extractRunScript)]
@@ -431,6 +475,9 @@ const runStepScripts = ({
       STUB_SERVER_ERROR_METHODS: serverErrorMethods.join(' '),
       STUB_GH_PULLS_LISTING_FAILURE_REPOSITORIES:
         pullRequestListingFailureRepositories.join(' '),
+      STUB_REPOSITORY_VARIABLES_JSON: repositoryVariablesPath,
+      STUB_OPEN_PULL_REQUEST_UPDATED_AT_JSON: openPullRequestUpdatedAtPath,
+      GITHUB_WORKSPACE: repositoryRoot,
     },
   });
 
@@ -1289,7 +1336,13 @@ describe('repository-config branch protection context-reporting precondition', (
     expect(writeRequests(result).map((request) => request.url)).toEqual([
       protectionUrl(mainDefaultBranchRepository.name, 'main'),
     ]);
-    expect(result.readOnlyEndpoints).toEqual([]);
+    // The repository's required-contexts variable is read before its protection
+    // is written; that read is not a pull request measurement.
+    expect(
+      result.readOnlyEndpoints.filter(
+        (endpoint) => !endpoint.includes('/actions/variables/'),
+      ),
+    ).toEqual([]);
   });
 
   test('a repository that already requires only some contexts must report the remaining ones on every open pull request head', () => {
@@ -2339,5 +2392,203 @@ describe('update-repos legacy workflow file removal', () => {
     for (const sandbox of sandboxDirectoriesEverCreated) {
       expect(fs.existsSync(sandbox)).toBe(false);
     }
+  });
+});
+
+const repositoryWithCiVariable: RepositoryListEntry = {
+  name: 'repository-with-ci-variable',
+  isArchived: false,
+  isPrivate: false,
+  isFork: false,
+  defaultBranchRef: { name: 'main' },
+};
+const repositoryWithUnreadableVariable: RepositoryListEntry = {
+  name: 'repository-with-unreadable-variable',
+  isArchived: false,
+  isPrivate: false,
+  isFork: false,
+  defaultBranchRef: { name: 'main' },
+};
+const ciVariableEnabled: RepositoryVariableState = {
+  status: 'found',
+  value: 'true',
+};
+const repositoryCiContexts = ['ci', 'umino-job'];
+const recentPullRequestUpdatedAt = '2099-01-01T00:00:00Z';
+const stalePullRequestUpdatedAt = '2000-01-01T00:00:00Z';
+
+const branchProtectionPayloadWithContexts = (contexts: string[]): unknown => {
+  const match = /BRANCH_PROTECTION_PAYLOAD='([^']*)'/.exec(workflowContent);
+  if (match === null) {
+    throw new Error(
+      'the workflow declares no BRANCH_PROTECTION_PAYLOAD assignment',
+    );
+  }
+  const payload: unknown = JSON.parse(match[1]);
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    !('required_status_checks' in payload) ||
+    typeof payload.required_status_checks !== 'object' ||
+    payload.required_status_checks === null
+  ) {
+    throw new Error(
+      'BRANCH_PROTECTION_PAYLOAD declares no required_status_checks object',
+    );
+  }
+  return {
+    ...payload,
+    required_status_checks: { ...payload.required_status_checks, contexts },
+  };
+};
+
+const sentBranchProtectionBodies = (result: StepRunResult): unknown[] =>
+  writeRequests(result).map((request): unknown => JSON.parse(request.data));
+
+describe('repository-config required contexts per repository variable', () => {
+  test('a repository whose variable is true is protected with the ci and umino-job contexts, every other field unchanged', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [repositoryWithCiVariable],
+      repositoryVariables: {
+        [repositoryWithCiVariable.name]: ciVariableEnabled,
+      },
+      unprotectedRepositories: [repositoryWithCiVariable.name],
+      openPullRequestCheckRuns: {
+        [repositoryWithCiVariable.name]: [['ci', 'umino-job']],
+      },
+    });
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
+      protectionUrl(repositoryWithCiVariable.name, 'main'),
+    ]);
+    expect(sentBranchProtectionBodies(result)).toEqual([
+      branchProtectionPayloadWithContexts(repositoryCiContexts),
+    ]);
+    expect(result.readOnlyEndpoints).toContain(
+      `repos/${organizationName}/${repositoryWithCiVariable.name}/actions/variables/PULL_REQUEST_CHECKS_IN_REPOSITORY_CI`,
+    );
+  });
+
+  test("a repository without the variable is protected with exactly today's payload", () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [mainDefaultBranchRepository],
+    });
+    expect(sentBranchProtectionBodies(result)).toEqual([
+      branchProtectionPayloadWithContexts(requiredStatusCheckContexts),
+    ]);
+  });
+
+  test('a repository whose variable read fails gets no write, is warned and listed as failed, and the rest of the fleet is still protected', () => {
+    const result = runStepScripts({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [
+        repositoryWithUnreadableVariable,
+        mainDefaultBranchRepository,
+      ],
+      repositoryVariables: {
+        [repositoryWithUnreadableVariable.name]: { status: 'error' },
+      },
+    });
+    expect(result.status).not.toBe(0);
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
+      protectionUrl(mainDefaultBranchRepository.name, 'main'),
+    ]);
+    expect(result.output).toContain(
+      `WARNING: could not read the required status check contexts for ${repositoryWithUnreadableVariable.name}, so it is not protected`,
+    );
+    expect(result.output).toContain(
+      `  - ${repositoryWithUnreadableVariable.name}`,
+    );
+  });
+
+  test('an open pull request idle for more than seven days that lacks the newly required context does not block protection', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [repositoryWithCiVariable],
+      repositoryVariables: {
+        [repositoryWithCiVariable.name]: ciVariableEnabled,
+      },
+      unprotectedRepositories: [repositoryWithCiVariable.name],
+      openPullRequestCheckRuns: {
+        [repositoryWithCiVariable.name]: [['umino-job'], ['ci', 'umino-job']],
+      },
+      openPullRequestUpdatedAt: {
+        [repositoryWithCiVariable.name]: [
+          stalePullRequestUpdatedAt,
+          recentPullRequestUpdatedAt,
+        ],
+      },
+    });
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
+      protectionUrl(repositoryWithCiVariable.name, 'main'),
+    ]);
+  });
+
+  test('a recent open pull request lacking the newly required context still withholds protection', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [repositoryWithCiVariable],
+      repositoryVariables: {
+        [repositoryWithCiVariable.name]: ciVariableEnabled,
+      },
+      unprotectedRepositories: [repositoryWithCiVariable.name],
+      openPullRequestCheckRuns: {
+        [repositoryWithCiVariable.name]: [['umino-job'], ['ci', 'umino-job']],
+      },
+      openPullRequestUpdatedAt: {
+        [repositoryWithCiVariable.name]: [
+          recentPullRequestUpdatedAt,
+          stalePullRequestUpdatedAt,
+        ],
+      },
+    });
+    expect(writeRequests(result)).toEqual([]);
+    expect(result.output).toContain(
+      `WARNING: ${repositoryWithCiVariable.name} neither already requires nor reports on every open pull request head: ci`,
+    );
+  });
+
+  test('when every open pull request is idle for more than seven days, the repository is treated as having none and is withheld as today', () => {
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [repositoryWithCiVariable],
+      repositoryVariables: {
+        [repositoryWithCiVariable.name]: ciVariableEnabled,
+      },
+      unprotectedRepositories: [repositoryWithCiVariable.name],
+      openPullRequestCheckRuns: {
+        [repositoryWithCiVariable.name]: [['ci', 'umino-job']],
+      },
+      openPullRequestUpdatedAt: {
+        [repositoryWithCiVariable.name]: [stalePullRequestUpdatedAt],
+      },
+    });
+    expect(writeRequests(result)).toEqual([]);
+    expect(result.output).toContain(
+      `WARNING: ${repositoryWithCiVariable.name} neither already requires nor reports on every open pull request head: ci, umino-job`,
+    );
+  });
+
+  test('contexts the repository already requires are not checked against its open pull requests', () => {
+    const result = runStepScriptsExpectingSuccess({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [repositoryWithCiVariable],
+      repositoryVariables: {
+        [repositoryWithCiVariable.name]: ciVariableEnabled,
+      },
+      alreadyRequiredContexts: repositoryCiContexts,
+      openPullRequestCheckRuns: {
+        [repositoryWithCiVariable.name]: [['build-and-test']],
+      },
+    });
+    expect(writeRequests(result).map((request) => request.url)).toEqual([
+      protectionUrl(repositoryWithCiVariable.name, 'main'),
+    ]);
+    expect(
+      result.readOnlyEndpoints.filter((endpoint) =>
+        endpoint.includes('/pulls'),
+      ),
+    ).toEqual([]);
   });
 });
