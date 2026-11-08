@@ -332,7 +332,11 @@ jobs:
           status_check_contexts_every_open_pull_request_reports() {
             local repository_slug="$1"
             local head_shas head_sha reported_contexts common_contexts="" is_first_pull_request="true"
-            head_shas="$(gh api "repos/$repository_slug/pulls?state=open&per_page=100" --jq ".[] | select(.updated_at >= \"$PULL_REQUEST_ACTIVITY_CUTOFF\") | .head.sha")" || return 1
+            local activity_cutoff="${2:-}" head_jq='.[].head.sha'
+            if [ -n "$activity_cutoff" ]; then
+              head_jq=".[] | select(.updated_at >= \"$activity_cutoff\") | .head.sha"
+            fi
+            head_shas="$(gh api "repos/$repository_slug/pulls?state=open&per_page=100" --jq "$head_jq")" || return 1
             if [ -z "$head_shas" ]; then
               return 0
             fi
@@ -349,7 +353,7 @@ jobs:
             printf '%s\n' "$common_contexts"
           }
           unproven_required_status_check_contexts() {
-            local repository_slug="$1" already_required_contexts="$2" required_contexts="$3"
+            local repository_slug="$1" already_required_contexts="$2" required_contexts="$3" activity_cutoff="${4:-}"
             local missing_contexts="" reported_contexts="" unproven_contexts="" context
             while IFS= read -r context; do
               [ -z "$context" ] && continue
@@ -361,7 +365,7 @@ jobs:
             if [ -z "$missing_contexts" ]; then
               return 0
             fi
-            reported_contexts="$(status_check_contexts_every_open_pull_request_reports "$repository_slug")" || return 1
+            reported_contexts="$(status_check_contexts_every_open_pull_request_reports "$repository_slug" "$activity_cutoff")" || return 1
             while IFS= read -r context; do
               [ -z "$context" ] && continue
               if printf '%s\n' "$reported_contexts" | grep -Fxq "$context"; then
@@ -455,6 +459,10 @@ jobs:
               continue
             fi
             REQUIRED_CONTEXTS="$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -r 'rtrimstr("\n") | split("\n") | join(", ")')"
+            ACTIVITY_CUTOFF=""
+            if printf '%s\n' "$REQUIRED_CONTEXT_LINES" | grep -Fxq 'ci'; then
+              ACTIVITY_CUTOFF="$PULL_REQUEST_ACTIVITY_CUTOFF"
+            fi
             REPO_PAYLOAD="$(printf '%s' "$BRANCH_PROTECTION_PAYLOAD" | jq -c --argjson contexts "$(printf '%s\n' "$REQUIRED_CONTEXT_LINES" | jq -Rs -c 'rtrimstr("\n") | split("\n")')" '.required_status_checks.contexts = $contexts')"
             ALREADY_REQUIRED_CONTEXTS="$(already_required_status_check_contexts "$ORG_NAME/$REPO" "$DEFAULT_BRANCH")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
@@ -468,7 +476,7 @@ jobs:
               sleep 5s
               continue
             fi
-            UNPROVEN_CONTEXTS="$(unproven_required_status_check_contexts "$ORG_NAME/$REPO" "$ALREADY_REQUIRED_CONTEXTS" "$REQUIRED_CONTEXT_LINES")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
+            UNPROVEN_CONTEXTS="$(unproven_required_status_check_contexts "$ORG_NAME/$REPO" "$ALREADY_REQUIRED_CONTEXTS" "$REQUIRED_CONTEXT_LINES" "$ACTIVITY_CUTOFF")" && REQUEST_EXIT_CODE=0 || REQUEST_EXIT_CODE=$?
             if [ "$REQUEST_EXIT_CODE" -ne 0 ]; then
               echo "WARNING: failed to establish which status check contexts $REPO reports; continuing with the remaining repositories"
               FAILED_REPOS="$FAILED_REPOS $REPO"

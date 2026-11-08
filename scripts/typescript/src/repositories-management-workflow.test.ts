@@ -2589,4 +2589,24 @@ describe('repository-config required contexts per repository variable', () => {
       ),
     ).toEqual([]);
   });
+  test("a repository without the variable whose stale open pull request lacks a default context stays withheld, with today's listing", () => {
+    const withheldContexts = requiredStatusCheckContexts
+      .filter((context) => context !== 'umino-job')
+      .join(', ');
+    const result = runStepScriptsExpectingFailure({
+      stepNames: [helperStepName, branchProtectionStepName],
+      repositories: [unprotectedRepository],
+      unprotectedRepositories: [unprotectedRepository.name],
+      openPullRequestCheckRuns: {
+        [unprotectedRepository.name]: [['umino-job']],
+      },
+      openPullRequestUpdatedAt: {
+        [unprotectedRepository.name]: [stalePullRequestUpdatedAt],
+      },
+    });
+    expect(writeRequests(result)).toEqual([]);
+    expect(result.output).toContain(
+      `WARNING: ${unprotectedRepository.name} neither already requires nor reports on every open pull request head: ${withheldContexts}\n`,
+    );
+  });
 });
