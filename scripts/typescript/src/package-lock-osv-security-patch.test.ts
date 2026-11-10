@@ -18,6 +18,14 @@ const readJsonRecord = (filePath: string): JsonRecord => {
   throw new Error(`expected ${filePath} to contain a JSON object`);
 };
 
+const readLockfilePackages = (): JsonRecord => {
+  const packages = readJsonRecord(packageLockPath).packages;
+  if (!isJsonRecord(packages)) {
+    throw new Error(`expected ${packageLockPath} to have packages`);
+  }
+  return packages;
+};
+
 const findPackageVersions = (
   packages: JsonRecord,
   packageName: string,
@@ -35,46 +43,51 @@ const findPackageVersions = (
       return value.version;
     });
 
-const requiredVersions = {
-  'fast-uri': '3.1.9',
-  glob: '14.0.2',
-};
+const vulnerableLockfileRanges = [
+  { packageName: 'glob', vulnerableRange: '>=9.0.0 <14.0.2' },
+  { packageName: 'minimatch', vulnerableRange: '>=7.0.0 <11.0.1' },
+];
+
+const minimumLockfileVersions = [{ packageName: 'fast-uri', minimum: '3.1.9' }];
+
+const requiredOverrides = [
+  { key: 'glob@>=9.0.0 <14.0.2', value: '14.0.4' },
+  { key: 'minimatch@>=7.0.0 <11.0.1', value: '11.0.7' },
+];
 
 describe('scripts/typescript/package-lock.json OSV security overrides', () => {
-  test.each(Object.entries(requiredVersions))(
-    '%s resolves every package-lock.json copy to at least %s',
-    (packageName, requiredMinimumVersion) => {
-      const lockfile = readJsonRecord(packageLockPath);
-      const packages = lockfile.packages;
-      if (!isJsonRecord(packages)) {
-        throw new Error(`expected ${packageLockPath} to have packages`);
-      }
-      const versions = findPackageVersions(packages, packageName);
+  test.each(vulnerableLockfileRanges)(
+    'no $packageName copy in the lockfile falls in $vulnerableRange',
+    ({ packageName, vulnerableRange }) => {
+      const versions = findPackageVersions(readLockfilePackages(), packageName);
       expect(versions.length).toBeGreaterThan(0);
       expect(
-        versions.every((version) =>
-          semver.gte(version, requiredMinimumVersion),
+        versions.filter((version) =>
+          semver.satisfies(version, vulnerableRange),
         ),
-      ).toBe(true);
+      ).toEqual([]);
     },
   );
 
-  test.each(Object.entries(requiredVersions))(
-    '%s has a package.json override at least %s',
-    (packageName, requiredMinimumVersion) => {
-      const packageJson = readJsonRecord(packageJsonPath);
-      const overrides = packageJson.overrides;
+  test.each(minimumLockfileVersions)(
+    'every $packageName copy in the lockfile is at least $minimum',
+    ({ packageName, minimum }) => {
+      const versions = findPackageVersions(readLockfilePackages(), packageName);
+      expect(versions.length).toBeGreaterThan(0);
+      expect(
+        versions.filter((version) => semver.lt(version, minimum)),
+      ).toEqual([]);
+    },
+  );
+
+  test.each(requiredOverrides)(
+    'package.json declares override $key as $value',
+    ({ key, value }) => {
+      const overrides = readJsonRecord(packageJsonPath).overrides;
       if (!isJsonRecord(overrides)) {
         throw new Error(`expected ${packageJsonPath} to have overrides`);
       }
-      expect(
-        Object.entries(overrides).some(
-          ([key, value]) =>
-            (key === packageName || key.startsWith(`${packageName}@`)) &&
-            typeof value === 'string' &&
-            semver.gte(value, requiredMinimumVersion),
-        ),
-      ).toBe(true);
+      expect(overrides[key]).toBe(value);
     },
   );
 });
