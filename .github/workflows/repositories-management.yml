@@ -26,10 +26,10 @@ jobs:
     env:
       GH_BOT_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
-      - uses: step-security/harden-runner@v2
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: |
           sudo apt-get update
           sudo apt-get install gh
@@ -37,7 +37,7 @@ jobs:
           echo $GH_BOT_TOKEN | gh auth login --with-token
       - name: Generate hs-bot-gh-ap installation token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
           private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
@@ -157,7 +157,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
-      - uses: step-security/harden-runner@v2
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       - name: Approve dependency update pull requests
@@ -165,7 +165,7 @@ jobs:
           ORG_NAME="${{ env.ORG_NAME }}"
           REPO_LIST=$(gh repo list $ORG_NAME --limit 1000 --json name,isArchived | jq -r '.[] | select(.isArchived == false) | .name')
           for REPO in $REPO_LIST; do
-            PR_URLS=$(gh api "repos/$ORG_NAME/$REPO/pulls?state=open&per_page=100" --jq '.[] | select(.head.ref | startswith("project-common/update-common-files-")) | .html_url') || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO"; continue; }
+            PR_URLS=$(gh api "repos/$ORG_NAME/$REPO/pulls?state=open&per_page=100" --jq ".[] | select(.user.login == \"hs-bot-gh-app[bot]\") | select(.head.repo.full_name == \"$ORG_NAME/$REPO\") | select(.head.ref | startswith(\"project-common/update-common-files-\")) | .html_url") || { echo "Warning: Failed to list open pull requests for $ORG_NAME/$REPO"; continue; }
             for PR_URL in $PR_URLS; do
               PR_NUMBER="${PR_URL##*/}"
               HEAD_SHA=$(gh api "repos/$ORG_NAME/$REPO/pulls/$PR_NUMBER" --jq '.head.sha') || { echo "Warning: Failed to read $PR_URL"; continue; }
@@ -184,14 +184,14 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
-      - uses: step-security/harden-runner@v2
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install GitHub Label Sync
-        run: npm install -g github-label-sync
+        run: npm install -g github-label-sync@3.0.0
 
       - name: Sync Labels
         run: |
@@ -209,7 +209,7 @@ jobs:
       HS_BOT_GH_AP_CLIENT_ID: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
       HS_BOT_GH_AP_PRIVATE_KEY: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
     steps:
-      - uses: step-security/harden-runner@v2
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       - name: Upsert hs-bot-gh-ap App credentials to all non-archived repos
@@ -234,10 +234,10 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
-      - uses: step-security/harden-runner@v2
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Prepare rate-limit-aware admin API helper
         run: |
           cat > /tmp/gh_admin_api.sh <<'HELPER'
