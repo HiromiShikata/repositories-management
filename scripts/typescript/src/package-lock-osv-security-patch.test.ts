@@ -51,8 +51,8 @@ const vulnerableLockfileRanges = [
 const minimumLockfileVersions = [{ packageName: 'fast-uri', minimum: '3.1.9' }];
 
 const requiredOverrides = [
-  { key: 'glob@>=9.0.0 <14.0.2', value: '14.0.4' },
-  { key: 'minimatch@>=7.0.0 <11.0.1', value: '11.0.7' },
+  { key: 'glob@>=9.0.0 <14.0.2', value: '14.0.6' },
+  { key: 'minimatch@>=7.0.0 <11.0.1', value: '11.0.8' },
 ];
 
 describe('scripts/typescript/package-lock.json OSV security overrides', () => {
