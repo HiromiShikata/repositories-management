@@ -70,6 +70,7 @@ const runClearNextActionDateStep = (
   eventName: string,
   prNumber: string,
   issueNumber: string,
+  clearFieldId = 'PVTF_stubFieldId',
 ): { exitCode: number | null; stderr: string; firstQueryData: string } => {
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'clear-next-action-'));
   try {
@@ -92,6 +93,8 @@ const runClearNextActionDateStep = (
         EVENT_NAME: eventName,
         PR_NUMBER: prNumber,
         ISSUE_NUMBER: issueNumber,
+        PROJECT_V2_ID: 'PVT_stubProjectId',
+        CLEAR_FIELD_ID: clearFieldId,
         STUB_CURL_DATA_DIR: curlDataDir,
       },
     });
@@ -953,6 +956,107 @@ describe('umino-project.yml workflow', () => {
       expect(result.stderr).toBe('');
       expect(result.firstQueryData).not.toContain('pullRequest');
       expect(result.firstQueryData).toContain('99');
+    });
+
+    test('sends no GraphQL request when the selected board has no clear field', () => {
+      const result = runClearNextActionDateStep(
+        workflowContent,
+        'issues',
+        '',
+        '99',
+        '',
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(result.firstQueryData).toBe('');
+    });
+  });
+
+  describe('project board selection step', () => {
+    const repositoryRoot = path.join(__dirname, '../../..');
+
+    const extractSelectionStepRunBody = (): string => {
+      const lines = workflowContent.split('\n');
+      const stepLineIndex = lines.findIndex((line) =>
+        line.includes('- name: Select project board'),
+      );
+      const runLineIndex = lines.findIndex(
+        (line, index) => index > stepLineIndex && line.trim() === 'run: |',
+      );
+      if (stepLineIndex === -1 || runLineIndex === -1) {
+        throw new Error(
+          'Could not find run block in the Select project board step',
+        );
+      }
+      const bodyIndent = lines[runLineIndex].indexOf('run:') + 2;
+      const bodyLines: string[] = [];
+      for (let index = runLineIndex + 1; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (line.trim() !== '' && !line.startsWith(' '.repeat(bodyIndent))) {
+          break;
+        }
+        bodyLines.push(line.slice(bodyIndent));
+      }
+      return bodyLines.join('\n');
+    };
+
+    test('writes the board selected by the repository variables to GITHUB_OUTPUT by executing the step run block', () => {
+      const cases: {
+        name: string;
+        variables: Record<string, string>;
+        projectV2Id: string;
+      }[] = [
+        {
+          name: 'no board variables',
+          variables: {},
+          projectV2Id: 'PVT_kwHOAGJHa84AFWnr',
+        },
+        {
+          name: 'board variables set',
+          variables: {
+            REPOSITORY_VARIABLE_PROJECT_V2_ID: 'PVT_fixtureProjectId',
+            REPOSITORY_VARIABLE_PROJECT_STATUS_FIELD_ID:
+              'PVTSSF_fixtureStatusFieldId',
+            REPOSITORY_VARIABLE_PROJECT_AWAITING_WORKSPACE_OPTION_ID:
+              'fixtureOptionId',
+          },
+          projectV2Id: 'PVT_fixtureProjectId',
+        },
+      ];
+      const selectionStepRunBody = extractSelectionStepRunBody();
+      const sandbox = fs.mkdtempSync(
+        path.join(os.tmpdir(), 'project-board-selection-step-'),
+      );
+      try {
+        for (const testCase of cases) {
+          const outputPath = path.join(
+            sandbox,
+            testCase.name.replace(/ /g, '_'),
+          );
+          fs.writeFileSync(outputPath, '');
+          const result = spawnSync(
+            'bash',
+            ['--noprofile', '--norc', '-c', selectionStepRunBody],
+            {
+              encoding: 'utf8',
+              cwd: repositoryRoot,
+              env: {
+                PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+                HOME: process.env.HOME ?? '/root',
+                GITHUB_OUTPUT: outputPath,
+                ...testCase.variables,
+              },
+            },
+          );
+          expect(result.stderr).toBe('');
+          expect(result.status).toBe(0);
+          expect(fs.readFileSync(outputPath, 'utf8').split('\n')).toContain(
+            `PROJECT_V2_ID=${testCase.projectV2Id}`,
+          );
+        }
+      } finally {
+        fs.rmSync(sandbox, { recursive: true, force: true });
+      }
     });
   });
 });
