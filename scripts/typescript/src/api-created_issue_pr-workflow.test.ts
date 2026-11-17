@@ -11,6 +11,26 @@ const workflowContent = fs.readFileSync(workflowPath, 'utf8');
 
 const addToProjectStepName = 'Add to Project';
 
+const umino = { PROJECT_V2_ID: 'PVT_kwHOAGJHa84AFWnr' };
+
+const fixtureBoardVariables: Record<string, { body: string; status?: string }> =
+  {
+    PROJECT_V2_ID: {
+      body: '{"name": "PROJECT_V2_ID", "value": "PVT_fixtureProjectId"}',
+    },
+    PROJECT_STATUS_FIELD_ID: {
+      body: '{"name": "PROJECT_STATUS_FIELD_ID", "value": "PVTSSF_fixtureStatusFieldId"}',
+    },
+    PROJECT_AWAITING_WORKSPACE_OPTION_ID: {
+      body: '{"name": "PROJECT_AWAITING_WORKSPACE_OPTION_ID", "value": "fixtureOptionId"}',
+    },
+  };
+
+const requestsTo = <T extends { url: string }>(
+  requests: T[],
+  urlFragment: string,
+): T[] => requests.filter((request) => request.url.includes(urlFragment));
+
 const extractStepBlock = (stepName: string): string => {
   const stepStart = workflowContent.indexOf(`- name: ${stepName}`);
   expect(stepStart).toBeGreaterThanOrEqual(0);
@@ -127,6 +147,23 @@ case "$request_url" in
   *graphql*)
     cat "$STUB_GRAPHQL_RESPONSE_BODY"
     ;;
+  *"/actions/variables/"*)
+    variable_name="\${request_url##*/}"
+    variable_file="$STUB_VARIABLE_RESPONSE_DIR/$variable_name"
+    if [ -f "$variable_file" ]; then
+      cat "$variable_file"
+      variable_status=200
+      if [ -f "$variable_file.status" ]; then
+        variable_status=$(cat "$variable_file.status")
+      fi
+    else
+      printf '%s' '{"message": "Not Found"}'
+      variable_status=404
+    fi
+    if [ "$has_w" = "true" ]; then
+      printf '\\n%s' "$variable_status"
+    fi
+    ;;
   *)
     cat "$STUB_REST_RESPONSE_BODY"
     if [ "$has_w" = "true" ]; then
@@ -148,12 +185,14 @@ esac
     restStatus = '200',
     restResponseBody = '{"node_id": "NODE_ID_SENTINEL"}',
     graphqlResponseBody = '{"data": {"addProjectV2ItemById": {"item": {"id": "ITEM_ID_SENTINEL"}}}}',
+    variableResponses = {},
   }: {
     issueOrPrUrlInput: string;
     ghToken?: string;
     restStatus?: string;
     restResponseBody?: string;
     graphqlResponseBody?: string;
+    variableResponses?: Record<string, { body: string; status?: string }>;
   }): AddToProjectStepRunResult => {
     const sandbox = fs.mkdtempSync(
       path.join(os.tmpdir(), 'api-created-issue-pr-add-to-project-'),
@@ -180,6 +219,30 @@ esac
       );
       fs.writeFileSync(graphqlResponseBodyPath, graphqlResponseBody);
 
+      const variableResponseDirectory = path.join(sandbox, 'variables');
+      fs.mkdirSync(variableResponseDirectory);
+      for (const [variableName, response] of Object.entries(
+        variableResponses,
+      )) {
+        fs.writeFileSync(
+          path.join(variableResponseDirectory, variableName),
+          response.body,
+        );
+        if (response.status !== undefined) {
+          fs.writeFileSync(
+            path.join(variableResponseDirectory, `${variableName}.status`),
+            response.status,
+          );
+        }
+      }
+
+      const sandboxScriptsDirectory = path.join(sandbox, 'scripts');
+      fs.mkdirSync(sandboxScriptsDirectory);
+      fs.symlinkSync(
+        path.join(__dirname, '../../..', 'scripts/project-board-selection.sh'),
+        path.join(sandboxScriptsDirectory, 'project-board-selection.sh'),
+      );
+
       const script = `set -e\n${extractRunScript(addToProjectStepName)}`;
 
       const outcome = spawnSync('bash', ['-c', script], {
@@ -189,11 +252,11 @@ esac
           PATH: `${stubDirectory}:${process.env['PATH'] ?? ''}`,
           GH_TOKEN: ghToken,
           ISSUE_OR_PR_URL_INPUT: issueOrPrUrlInput,
-          PROJECT_V2_ID: 'PROJECT_SENTINEL',
           STUB_CURL_LOG: curlLogPath,
           STUB_REST_RESPONSE_BODY: restResponseBodyPath,
           STUB_REST_STATUS: restStatusPath,
           STUB_GRAPHQL_RESPONSE_BODY: graphqlResponseBodyPath,
+          STUB_VARIABLE_RESPONSE_DIR: variableResponseDirectory,
         },
       });
 
@@ -223,7 +286,7 @@ esac
       expect(result.requests).toHaveLength(0);
     });
 
-    test('succeeds end-to-end and authenticates both requests from the same GH_TOKEN value', () => {
+    test('succeeds end-to-end and authenticates every request from the same GH_TOKEN value', () => {
       const result = runAddToProjectStep({
         issueOrPrUrlInput:
           'https://github.com/HiromiShikata/example-repo/issues/42',
@@ -232,15 +295,69 @@ esac
       expect(result.output).not.toContain('GraphQL error occurred');
       expect(result.output).not.toContain('Non-JSON response received');
       expect(result.status).toBe(0);
-      expect(result.requests).toHaveLength(2);
-      const restAuthorization = result.requests[0]?.authorization ?? '';
-      const graphqlAuthorization = result.requests[1]?.authorization ?? '';
+      const restRequests = requestsTo(result.requests, '/issues/42');
+      expect(restRequests).toHaveLength(1);
+      const restAuthorization = restRequests[0]?.authorization ?? '';
       expect(restAuthorization.startsWith('token ')).toBe(true);
-      expect(graphqlAuthorization.startsWith('bearer ')).toBe(true);
-      const restTokenValue = restAuthorization.slice('token '.length);
-      const graphqlTokenValue = graphqlAuthorization.slice('bearer '.length);
-      expect(restTokenValue.length).toBeGreaterThan(0);
-      expect(graphqlTokenValue).toBe(restTokenValue);
+      const tokenValue = restAuthorization.slice('token '.length);
+      expect(tokenValue.length).toBeGreaterThan(0);
+      for (const request of result.requests) {
+        expect(request.authorization).toBe(
+          request.url.endsWith('/graphql')
+            ? `bearer ${tokenValue}`
+            : `token ${tokenValue}`,
+        );
+      }
+    });
+
+    test('adds an issue of a repository with board variables to that board and sets its status to the awaiting option', () => {
+      const result = runAddToProjectStep({
+        issueOrPrUrlInput:
+          'https://github.com/HiromiShikata/example-board-repo/issues/7',
+        variableResponses: fixtureBoardVariables,
+      });
+      expect(result.status).toBe(0);
+      const graphqlRequests = requestsTo(result.requests, '/graphql');
+      expect(graphqlRequests).toHaveLength(2);
+      expect(graphqlRequests[0]?.data).toContain('PVT_fixtureProjectId');
+      const statusRequestData = graphqlRequests[1]?.data ?? '';
+      expect(statusRequestData).toContain('updateProjectV2ItemFieldValue');
+      expect(statusRequestData).toContain('PVTSSF_fixtureStatusFieldId');
+      expect(statusRequestData).toContain('fixtureOptionId');
+      expect(statusRequestData).toContain('ITEM_ID_SENTINEL');
+      for (const request of result.requests) {
+        expect(request.data).not.toContain(umino.PROJECT_V2_ID);
+      }
+    });
+
+    test('adds an issue of a repository without board variables to the UMINO board without changing its status', () => {
+      const result = runAddToProjectStep({
+        issueOrPrUrlInput:
+          'https://github.com/HiromiShikata/example-repo/issues/42',
+      });
+      expect(result.status).toBe(0);
+      const graphqlRequests = requestsTo(result.requests, '/graphql');
+      expect(graphqlRequests).toHaveLength(1);
+      expect(graphqlRequests[0]?.data ?? '').toContain(umino.PROJECT_V2_ID);
+      for (const request of result.requests) {
+        expect(request.data).not.toContain('updateProjectV2ItemFieldValue');
+      }
+    });
+
+    test('fails without adding the item when reading a board variable returns an error other than 404', () => {
+      const result = runAddToProjectStep({
+        issueOrPrUrlInput:
+          'https://github.com/HiromiShikata/example-repo/issues/42',
+        variableResponses: {
+          PROJECT_V2_ID: {
+            body: '{"message": "Server Error"}',
+            status: '500',
+          },
+        },
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain('HTTP 500');
+      expect(requestsTo(result.requests, '/graphql')).toHaveLength(0);
     });
   });
 });
