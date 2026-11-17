@@ -111,8 +111,15 @@ describe('project-board-selection.sh', () => {
     }
   });
 
-  test('exits 1 with a message when the board variables are only partly set', () => {
+  test('exits 1 with a message when the board variables are incomplete or are not plain identifiers', () => {
     const invalidVariables: Record<string, string>[] = [
+      {
+        REPOSITORY_VARIABLE_PROJECT_V2_ID: 'PVT_x$(echo INJECTED_BY_VARIABLE)',
+        REPOSITORY_VARIABLE_PROJECT_STATUS_FIELD_ID:
+          'PVTSSF_fixtureStatusFieldId',
+        REPOSITORY_VARIABLE_PROJECT_AWAITING_WORKSPACE_OPTION_ID:
+          'fixtureOptionId',
+      },
       { REPOSITORY_VARIABLE_PROJECT_V2_ID: 'PVT_fixtureProjectId' },
       {
         REPOSITORY_VARIABLE_PROJECT_V2_ID: 'PVT_fixtureProjectId',

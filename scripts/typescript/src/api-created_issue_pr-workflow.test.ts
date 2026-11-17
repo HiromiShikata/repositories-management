@@ -3,13 +3,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const workflowPath = path.join(
+const addScriptPath = path.join(
   __dirname,
-  '../../../.github/workflows/api-created_issue_pr.yml',
+  '../../..',
+  'scripts/add-url-item-to-project-board.sh',
 );
-const workflowContent = fs.readFileSync(workflowPath, 'utf8');
-
-const addToProjectStepName = 'Add to Project';
 
 const umino = { PROJECT_V2_ID: 'PVT_kwHOAGJHa84AFWnr' };
 
@@ -30,38 +28,6 @@ const requestsTo = <T extends { url: string }>(
   requests: T[],
   urlFragment: string,
 ): T[] => requests.filter((request) => request.url.includes(urlFragment));
-
-const extractStepBlock = (stepName: string): string => {
-  const stepStart = workflowContent.indexOf(`- name: ${stepName}`);
-  expect(stepStart).toBeGreaterThanOrEqual(0);
-  const nextStep = workflowContent.indexOf('- name:', stepStart + 1);
-  return nextStep === -1
-    ? workflowContent.slice(stepStart)
-    : workflowContent.slice(stepStart, nextStep);
-};
-
-const stepKeyIndentation = 8;
-const scriptIndentation = 10;
-
-const extractRunScript = (stepName: string): string => {
-  const stepBlock = extractStepBlock(stepName);
-  const lines = stepBlock.split('\n');
-  const runLineIndex = lines.findIndex((line) => /^\s*run: \|\s*$/.test(line));
-  expect(runLineIndex).toBeGreaterThanOrEqual(0);
-  const scriptLines: string[] = [];
-  for (const line of lines.slice(runLineIndex + 1)) {
-    if (line.trim() === '') {
-      scriptLines.push('');
-      continue;
-    }
-    const indentation = line.length - line.trimStart().length;
-    if (indentation <= stepKeyIndentation) {
-      break;
-    }
-    scriptLines.push(line.slice(scriptIndentation));
-  }
-  return scriptLines.join('\n');
-};
 
 describe('api-created_issue_pr.yml Add to Project workflow', () => {
   type RecordedCurlRequest = {
@@ -236,22 +202,12 @@ esac
         }
       }
 
-      const sandboxScriptsDirectory = path.join(sandbox, 'scripts');
-      fs.mkdirSync(sandboxScriptsDirectory);
-      fs.symlinkSync(
-        path.join(__dirname, '../../..', 'scripts/project-board-selection.sh'),
-        path.join(sandboxScriptsDirectory, 'project-board-selection.sh'),
-      );
-
-      const script = `set -e\n${extractRunScript(addToProjectStepName)}`;
-
-      const outcome = spawnSync('bash', ['-c', script], {
+      const outcome = spawnSync('bash', [addScriptPath, issueOrPrUrlInput], {
         cwd: sandbox,
         encoding: 'utf8',
         env: {
           PATH: `${stubDirectory}:${process.env['PATH'] ?? ''}`,
           GH_TOKEN: ghToken,
-          ISSUE_OR_PR_URL_INPUT: issueOrPrUrlInput,
           STUB_CURL_LOG: curlLogPath,
           STUB_REST_RESPONSE_BODY: restResponseBodyPath,
           STUB_REST_STATUS: restStatusPath,
@@ -357,6 +313,36 @@ esac
       });
       expect(result.status).not.toBe(0);
       expect(result.output).toContain('HTTP 500');
+      expect(requestsTo(result.requests, '/graphql')).toHaveLength(0);
+    });
+
+    test('stops before reading any board variable when the item cannot be read', () => {
+      const result = runAddToProjectStep({
+        issueOrPrUrlInput:
+          'https://github.com/HiromiShikata/example-repo/issues/42',
+        restStatus: '404',
+        restResponseBody: '{"message": "Not Found"}',
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.requests).toHaveLength(1);
+      expect(requestsTo(result.requests, '/actions/variables/')).toHaveLength(
+        0,
+      );
+    });
+
+    test('refuses a board identifier that is not a plain identifier without executing it', () => {
+      const result = runAddToProjectStep({
+        issueOrPrUrlInput:
+          'https://github.com/HiromiShikata/example-board-repo/issues/7',
+        variableResponses: {
+          ...fixtureBoardVariables,
+          PROJECT_V2_ID: {
+            body: '{"name": "PROJECT_V2_ID", "value": "PVT_x$(echo INJECTED_BY_VARIABLE)"}',
+          },
+        },
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.output).not.toContain('INJECTED_BY_VARIABLE');
       expect(requestsTo(result.requests, '/graphql')).toHaveLength(0);
     });
   });
