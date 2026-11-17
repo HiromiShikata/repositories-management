@@ -57,6 +57,7 @@ jobs:
             "scripts/check-pull-request-linked-issues-runner.sh"
             "scripts/ensure-repositories-management-scripts-typescript.sh"
             "scripts/project-board-selection.sh"
+            "scripts/add-url-item-to-project-board.sh"
             ".github/workflows/api-created_issue_pr.yml"
             ".github/workflows/secret-scan.yml"
             ".github/workflows/ci-failure-issue-creator.yml"
