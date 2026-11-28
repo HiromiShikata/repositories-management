@@ -5,6 +5,9 @@ on:
     - cron: '0 0 5,15,25 * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   spread-sheet:
     runs-on: ubuntu-latest

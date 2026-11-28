@@ -20,6 +20,9 @@ on:
 env:
   ORG_NAME: HiromiShikata
 
+permissions:
+  contents: read
+
 jobs:
   update-repos:
     runs-on: ubuntu-latest
