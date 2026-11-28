@@ -537,16 +537,6 @@ const createFakeNpmSandbox = (npmBody: string): FakeNpmSandbox => {
   return { sandboxDir, binDir, npmLogPath, githubOutputPath };
 };
 
-const declaredCommitlintPin = (variableName: string): string => {
-  const match = workflowContent.match(
-    new RegExp(`^\\s+${variableName}: (\\S+)$`, 'm'),
-  );
-  if (!match) {
-    throw new Error(`${variableName} is not declared in commit-lint.yml`);
-  }
-  return match[1];
-};
-
 const runWorkflowStepScript = (
   script: string,
   sandbox: FakeNpmSandbox,
@@ -558,17 +548,21 @@ const runWorkflowStepScript = (
       PATH: `${sandbox.binDir}:${process.env.PATH ?? ''}`,
       STUB_NPM_LOG: sandbox.npmLogPath,
       GITHUB_OUTPUT: sandbox.githubOutputPath,
-      COMMITLINT_CLI_VERSION: declaredCommitlintPin('COMMITLINT_CLI_VERSION'),
-      COMMITLINT_CONFIG_VERSION: declaredCommitlintPin(
-        'COMMITLINT_CONFIG_VERSION',
-      ),
+      CLI_VERSION: '21.2.4',
+      CONFIG_VERSION: '21.1.0',
     },
   });
 
 describe('Resolve commitlint cache key step', () => {
-  test('writes the pinned @commitlint/cli and @commitlint/config-conventional versions as the cache key without asking npm for a release', () => {
+  test('writes the latest @commitlint/cli and @commitlint/config-conventional versions as the cache key', () => {
     const sandbox = createFakeNpmSandbox(
-      'echo "unexpected npm $*" >&2\nexit 1',
+      [
+        'case "$*" in',
+        '  "view @commitlint/cli version") echo 21.2.4 ;;',
+        '  "view @commitlint/config-conventional version") echo 21.1.0 ;;',
+        '  *) echo "unexpected npm $*" >&2; exit 2 ;;',
+        'esac',
+      ].join('\n'),
     );
     try {
       const outcome = runWorkflowStepScript(
@@ -577,48 +571,32 @@ describe('Resolve commitlint cache key step', () => {
       );
       expect(outcome.status).toBe(0);
       expect(fs.readFileSync(sandbox.githubOutputPath, 'utf8')).toBe(
-        `key=${declaredCommitlintPin('COMMITLINT_CLI_VERSION')}-${declaredCommitlintPin('COMMITLINT_CONFIG_VERSION')}\n`,
+        [
+          'cli-version=21.2.4',
+          'config-version=21.1.0',
+          'key=21.2.4-21.1.0',
+          '',
+        ].join('\n'),
       );
-      expect(fs.existsSync(sandbox.npmLogPath)).toBe(false);
     } finally {
       fs.rmSync(sandbox.sandboxDir, { recursive: true, force: true });
     }
   });
 
-  test('fails the step and writes no cache key when a pinned version is not set', () => {
-    const sandbox = createFakeNpmSandbox('exit 0');
+  test('fails the step and writes no cache key when npm cannot resolve a version', () => {
+    const sandbox = createFakeNpmSandbox(
+      'echo "registry unreachable" >&2\nexit 1',
+    );
     try {
-      const outcome = spawnSync(
-        'bash',
-        [
-          '-c',
-          `set -e\n${extractRunScript(resolveCommitlintCacheKeyStepName)}`,
-        ],
-        {
-          cwd: sandbox.sandboxDir,
-          encoding: 'utf8',
-          env: {
-            PATH: process.env.PATH ?? '',
-            GITHUB_OUTPUT: sandbox.githubOutputPath,
-          },
-        },
+      const outcome = runWorkflowStepScript(
+        extractRunScript(resolveCommitlintCacheKeyStepName),
+        sandbox,
       );
       expect(outcome.status).not.toBe(0);
       expect(fs.readFileSync(sandbox.githubOutputPath, 'utf8')).toBe('');
     } finally {
       fs.rmSync(sandbox.sandboxDir, { recursive: true, force: true });
     }
-  });
-});
-
-describe('commitlint version pins (declared values)', () => {
-  test('the job pins @commitlint/cli and @commitlint/config-conventional to exact semver versions', () => {
-    expect(declaredCommitlintPin('COMMITLINT_CLI_VERSION')).toMatch(
-      /^\d+\.\d+\.\d+$/,
-    );
-    expect(declaredCommitlintPin('COMMITLINT_CONFIG_VERSION')).toMatch(
-      /^\d+\.\d+\.\d+$/,
-    );
   });
 });
 
@@ -681,7 +659,7 @@ describe('Install commitlint step with the restored cache', () => {
       expect(fs.readFileSync(sandbox.npmLogPath, 'utf8')).toBe(
         [
           'init -y',
-          `install --no-fund --ignore-scripts --save-dev @commitlint/cli@${declaredCommitlintPin('COMMITLINT_CLI_VERSION')} @commitlint/config-conventional@${declaredCommitlintPin('COMMITLINT_CONFIG_VERSION')}`,
+          'install --no-fund --ignore-scripts --save-dev @commitlint/cli@21.2.4 @commitlint/config-conventional@21.1.0',
           '',
         ].join('\n'),
       );

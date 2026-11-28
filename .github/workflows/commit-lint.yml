@@ -25,9 +25,6 @@ jobs:
       issues: read
       pull-requests: write
       contents: read
-    env:
-      COMMITLINT_CLI_VERSION: 21.2.4
-      COMMITLINT_CONFIG_VERSION: 21.2.4
     steps:
       - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
@@ -36,7 +33,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          # The steps below run commitlint configuration from the pull request head, so the write-capable token must not stay in .git/config.
           persist-credentials: false
 
       - name: Use Node.js
@@ -92,7 +88,13 @@ jobs:
         if: github.head_ref != 'fleet-live' && github.head_ref != 'fleet-live-to-main'
         run: |
           set -euo pipefail
-          echo "key=${COMMITLINT_CLI_VERSION}-${COMMITLINT_CONFIG_VERSION}" >> "$GITHUB_OUTPUT"
+          CLI_VERSION=$(npm view @commitlint/cli version)
+          CONFIG_VERSION=$(npm view @commitlint/config-conventional version)
+          {
+            echo "cli-version=${CLI_VERSION}"
+            echo "config-version=${CONFIG_VERSION}"
+            echo "key=${CLI_VERSION}-${CONFIG_VERSION}"
+          } >> "$GITHUB_OUTPUT"
       - name: Restore commitlint install
         if: github.head_ref != 'fleet-live' && github.head_ref != 'fleet-live-to-main'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -101,6 +103,9 @@ jobs:
           key: commitlint-${{ runner.os }}-${{ steps.commitlint-cache-key.outputs.key }}
       - name: Install commitlint
         if: github.head_ref != 'fleet-live' && github.head_ref != 'fleet-live-to-main'
+        env:
+          CLI_VERSION: ${{ steps.commitlint-cache-key.outputs.cli-version }}
+          CONFIG_VERSION: ${{ steps.commitlint-cache-key.outputs.config-version }}
         run: |
           if [ -x /tmp/commitlint-run/node_modules/.bin/commitlint ]; then
             echo "commitlint restored from cache"
@@ -109,7 +114,7 @@ jobs:
           mkdir -p /tmp/commitlint-run
           cd /tmp/commitlint-run
           npm init -y
-          npm install --no-fund --ignore-scripts --save-dev "@commitlint/cli@$COMMITLINT_CLI_VERSION" "@commitlint/config-conventional@$COMMITLINT_CONFIG_VERSION"
+          npm install --no-fund --ignore-scripts --save-dev "@commitlint/cli@$CLI_VERSION" "@commitlint/config-conventional@$CONFIG_VERSION"
       - name: Lint commits
         if: github.head_ref != 'fleet-live' && github.head_ref != 'fleet-live-to-main'
         env:
