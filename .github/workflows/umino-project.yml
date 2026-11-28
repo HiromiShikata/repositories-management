@@ -77,11 +77,24 @@ jobs:
         if: >-
           github.event_name == 'issues' && github.event.issue.state == 'open' &&
           (github.event.action == 'opened' || github.event.action == 'reopened')
-      - name: Move issue to ${{ env.awaiting_workspace }}
+      - name: Fetch add-project-board-item script
         run: |
           bash scripts/ensure-repositories-management-scripts-typescript.sh
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        if: >-
+          github.event_name == 'issues' && github.event.issue.state == 'open' &&
+          (github.event.action == 'opened' || github.event.action == 'reopened')
+      - name: Install add-project-board-item dependencies
+        run: |
           cd scripts/typescript
-          npm i
+          npm i --ignore-scripts
+        if: >-
+          github.event_name == 'issues' && github.event.issue.state == 'open' &&
+          (github.event.action == 'opened' || github.event.action == 'reopened')
+      - name: Move issue to ${{ env.awaiting_workspace }}
+        run: |
+          cd scripts/typescript
           npx tsx src/adapter/entry-points/cli/add-project-board-item.ts
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -204,12 +217,24 @@ jobs:
           github.event.pull_request.user.login != 'app/dependabot'
         with:
           node-version: 24
+      - name: Fetch linked-issues check script
+        if: >-
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.user.login != 'app/dependabot'
+        run: bash scripts/check-pull-request-linked-issues-runner.sh fetch
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+      - name: Install linked-issues check dependencies
+        if: >-
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.user.login != 'app/dependabot'
+        run: bash scripts/check-pull-request-linked-issues-runner.sh install
       - name: Check linked issues in pull request description
         id: check-linked-issues
         if: >-
           github.event.pull_request.user.login != 'dependabot[bot]' &&
           github.event.pull_request.user.login != 'app/dependabot'
-        run: bash scripts/check-pull-request-linked-issues-runner.sh
+        run: bash scripts/check-pull-request-linked-issues-runner.sh run
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ACCOUNT_OWNER: HiromiShikata
