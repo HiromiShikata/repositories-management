@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# Runs the linked-issues check of pull request descriptions.
-# Phases (one per workflow step, so GH_TOKEN reaches only the steps that call GitHub):
-#   fetch    locate scripts/typescript, or clone repositories-management when it is absent (needs GH_TOKEN)
-#   install  npm ci --omit=dev --ignore-scripts in the located directory (no token)
-#   run      npx tsx for the check (needs GH_TOKEN)
-# With no phase argument, all three phases run in that order.
 set -euo pipefail
 SCRIPT_RELATIVE_PATH=src/adapter/entry-points/cli/check-pull-request-linked-issues.ts
 PHASE="${1:-all}"
