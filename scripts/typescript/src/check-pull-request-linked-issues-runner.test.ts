@@ -21,7 +21,10 @@ const makeSandboxDir = (prefix: string): string => {
 
 const createFakeExecutable = (binDir: string, name: string, body: string) => {
   const filePath = path.join(binDir, name);
-  fs.writeFileSync(filePath, `#!/usr/bin/env bash\nset -uo pipefail\n${body}\n`);
+  fs.writeFileSync(
+    filePath,
+    `#!/usr/bin/env bash\nset -uo pipefail\n${body}\n`,
+  );
   fs.chmodSync(filePath, 0o755);
 };
 
@@ -65,7 +68,10 @@ describe('check-pull-request-linked-issues-runner.sh', () => {
       path.join(cwd, 'scripts/typescript', path.dirname(CLI_RELATIVE_PATH)),
       { recursive: true },
     );
-    fs.writeFileSync(path.join(cwd, 'scripts/typescript', CLI_RELATIVE_PATH), '');
+    fs.writeFileSync(
+      path.join(cwd, 'scripts/typescript', CLI_RELATIVE_PATH),
+      '',
+    );
 
     createFakeExecutable(
       binDir,
@@ -83,13 +89,20 @@ describe('check-pull-request-linked-issues-runner.sh', () => {
       'echo "gh $*" >> "$INVOCATION_LOG"; exit 1',
     );
 
-    const { status, stderr } = runRunnerScript(cwd, binDir, logPath, runnerTemp);
+    const { status, stderr } = runRunnerScript(
+      cwd,
+      binDir,
+      logPath,
+      runnerTemp,
+    );
     const log = fs.readFileSync(logPath, 'utf8');
     const localScriptDir = path.join(cwd, 'scripts/typescript');
 
     expect(status).toBe(0);
     expect(stderr).toBe('');
-    expect(log).toContain(`npm ci --omit=dev cwd=${localScriptDir}`);
+    expect(log).toContain(
+      `npm ci --omit=dev --ignore-scripts cwd=${localScriptDir}`,
+    );
     expect(log).toContain(`npx tsx ${CLI_RELATIVE_PATH} cwd=${localScriptDir}`);
     expect(log).not.toContain('gh ');
   });
@@ -121,7 +134,12 @@ describe('check-pull-request-linked-issues-runner.sh', () => {
       'echo "npx $* cwd=$(pwd)" >> "$INVOCATION_LOG"',
     );
 
-    const { status, stderr } = runRunnerScript(cwd, binDir, logPath, runnerTemp);
+    const { status, stderr } = runRunnerScript(
+      cwd,
+      binDir,
+      logPath,
+      runnerTemp,
+    );
     const log = fs.readFileSync(logPath, 'utf8');
     const clonedScriptDir = path.join(
       runnerTemp,
@@ -134,8 +152,12 @@ describe('check-pull-request-linked-issues-runner.sh', () => {
     expect(log).toContain(
       'gh repo clone HiromiShikata/repositories-management',
     );
-    expect(log).toContain(`npm ci --omit=dev cwd=${clonedScriptDir}`);
-    expect(log).toContain(`npx tsx ${CLI_RELATIVE_PATH} cwd=${clonedScriptDir}`);
+    expect(log).toContain(
+      `npm ci --omit=dev --ignore-scripts cwd=${clonedScriptDir}`,
+    );
+    expect(log).toContain(
+      `npx tsx ${CLI_RELATIVE_PATH} cwd=${clonedScriptDir}`,
+    );
   });
 });
 
@@ -196,7 +218,174 @@ describe('check-pull-request-linked-issues-runner.sh clone fallback against the 
 
     expect(result.status).toBe(0);
     expect(
-      fs.existsSync(path.join(cloneDir, 'scripts/typescript', CLI_RELATIVE_PATH)),
+      fs.existsSync(
+        path.join(cloneDir, 'scripts/typescript', CLI_RELATIVE_PATH),
+      ),
     ).toBe(true);
+  });
+});
+
+describe('check-pull-request-linked-issues-runner.sh phases (GH_TOKEN is given only to the phases that call GitHub)', () => {
+  const runPhase = (
+    phase: string,
+    cwd: string,
+    binDir: string,
+    logPath: string,
+    runnerTemp: string,
+  ): { status: number | null; stderr: string } => {
+    const result = spawnSync('bash', [scriptPath, phase], {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        PATH: `${binDir}:${process.env.PATH ?? '/usr/bin:/bin'}`,
+        INVOCATION_LOG: logPath,
+        RUNNER_TEMP: runnerTemp,
+      },
+    });
+    return { status: result.status, stderr: result.stderr ?? '' };
+  };
+
+  const setUpFakeTools = (binDir: string): void => {
+    createFakeExecutable(
+      binDir,
+      'npm',
+      'echo "npm $* cwd=$(pwd)" >> "$INVOCATION_LOG"',
+    );
+    createFakeExecutable(
+      binDir,
+      'npx',
+      'echo "npx $* cwd=$(pwd)" >> "$INVOCATION_LOG"',
+    );
+    createFakeExecutable(
+      binDir,
+      'gh',
+      'echo "gh $*" >> "$INVOCATION_LOG"; exit 1',
+    );
+  };
+
+  test('fetch phase with a local copy records the absolute script directory and runs nothing else', () => {
+    const cwd = makeSandboxDir('linked-issues-phase-fetch-');
+    const runnerTemp = makeSandboxDir('linked-issues-phase-temp-');
+    const binDir = makeSandboxDir('linked-issues-phase-bin-');
+    const logPath = path.join(cwd, 'invocations.log');
+    fs.mkdirSync(
+      path.join(cwd, 'scripts/typescript', path.dirname(CLI_RELATIVE_PATH)),
+      {
+        recursive: true,
+      },
+    );
+    fs.writeFileSync(
+      path.join(cwd, 'scripts/typescript', CLI_RELATIVE_PATH),
+      '',
+    );
+    setUpFakeTools(binDir);
+
+    const { status, stderr } = runPhase(
+      'fetch',
+      cwd,
+      binDir,
+      logPath,
+      runnerTemp,
+    );
+
+    expect(status).toBe(0);
+    expect(stderr).toBe('');
+    expect(fs.existsSync(logPath)).toBe(false);
+    expect(
+      fs.readFileSync(
+        path.join(runnerTemp, 'check-pull-request-linked-issues-dir'),
+        'utf8',
+      ),
+    ).toBe(`${path.join(cwd, 'scripts/typescript')}\n`);
+  });
+
+  test('install phase after fetch runs npm ci --omit=dev --ignore-scripts in the fetched directory, without gh or npx', () => {
+    const cwd = makeSandboxDir('linked-issues-phase-install-');
+    const runnerTemp = makeSandboxDir('linked-issues-phase-temp-');
+    const binDir = makeSandboxDir('linked-issues-phase-bin-');
+    const logPath = path.join(cwd, 'invocations.log');
+    fs.mkdirSync(
+      path.join(cwd, 'scripts/typescript', path.dirname(CLI_RELATIVE_PATH)),
+      {
+        recursive: true,
+      },
+    );
+    fs.writeFileSync(
+      path.join(cwd, 'scripts/typescript', CLI_RELATIVE_PATH),
+      '',
+    );
+    setUpFakeTools(binDir);
+    runPhase('fetch', cwd, binDir, logPath, runnerTemp);
+
+    const { status, stderr } = runPhase(
+      'install',
+      cwd,
+      binDir,
+      logPath,
+      runnerTemp,
+    );
+    const log = fs.readFileSync(logPath, 'utf8');
+
+    expect(status).toBe(0);
+    expect(stderr).toBe('');
+    expect(log).toBe(
+      `npm ci --omit=dev --ignore-scripts cwd=${path.join(cwd, 'scripts/typescript')}\n`,
+    );
+  });
+
+  test('run phase after install runs npx tsx in the fetched directory and does not install again', () => {
+    const cwd = makeSandboxDir('linked-issues-phase-run-');
+    const runnerTemp = makeSandboxDir('linked-issues-phase-temp-');
+    const binDir = makeSandboxDir('linked-issues-phase-bin-');
+    const logPath = path.join(cwd, 'invocations.log');
+    fs.mkdirSync(
+      path.join(cwd, 'scripts/typescript', path.dirname(CLI_RELATIVE_PATH)),
+      {
+        recursive: true,
+      },
+    );
+    fs.writeFileSync(
+      path.join(cwd, 'scripts/typescript', CLI_RELATIVE_PATH),
+      '',
+    );
+    setUpFakeTools(binDir);
+    runPhase('fetch', cwd, binDir, logPath, runnerTemp);
+    runPhase('install', cwd, binDir, logPath, runnerTemp);
+    fs.rmSync(logPath);
+
+    const { status, stderr } = runPhase(
+      'run',
+      cwd,
+      binDir,
+      logPath,
+      runnerTemp,
+    );
+    const log = fs.readFileSync(logPath, 'utf8');
+
+    expect(status).toBe(0);
+    expect(stderr).toBe('');
+    expect(log).toBe(
+      `npx tsx ${CLI_RELATIVE_PATH} cwd=${path.join(cwd, 'scripts/typescript')}\n`,
+    );
+  });
+
+  test('an unknown phase fails with status 2 and invokes nothing', () => {
+    const cwd = makeSandboxDir('linked-issues-phase-unknown-');
+    const runnerTemp = makeSandboxDir('linked-issues-phase-temp-');
+    const binDir = makeSandboxDir('linked-issues-phase-bin-');
+    const logPath = path.join(cwd, 'invocations.log');
+    setUpFakeTools(binDir);
+
+    const { status, stderr } = runPhase(
+      'publish',
+      cwd,
+      binDir,
+      logPath,
+      runnerTemp,
+    );
+
+    expect(status).toBe(2);
+    expect(stderr).toContain('unknown phase: publish');
+    expect(fs.existsSync(logPath)).toBe(false);
   });
 });

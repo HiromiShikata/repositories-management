@@ -42,8 +42,7 @@ const extractRunScript = (stepName: string): string => {
 };
 
 const lintCommitsStepName = 'Lint commits';
-const commitlintBinaryPath =
-  '/tmp/commitlint-run/node_modules/.bin/commitlint';
+const commitlintBinaryPath = '/tmp/commitlint-run/node_modules/.bin/commitlint';
 const defaultBranchRefSentinel = 'origin/main-default-branch-sentinel';
 const allZeroPlaceholderSha = '0'.repeat(40);
 const neverCommittedSha = 'abcdef0123456789abcdef0123456789abcdef01';
@@ -429,9 +428,7 @@ const evaluateGitHubActionsIfExpression = (
     }
     const equalMatch = comparison.match(/^(.+?)==(.+)$/);
     if (equalMatch !== null) {
-      return (
-        resolveOperand(equalMatch[1]) === resolveOperand(equalMatch[2])
-      );
+      return resolveOperand(equalMatch[1]) === resolveOperand(equalMatch[2]);
     }
     throw new Error(
       `unsupported comparison in GitHub Actions expression evaluator: ${comparison}`,
@@ -551,6 +548,8 @@ const runWorkflowStepScript = (
       PATH: `${sandbox.binDir}:${process.env.PATH ?? ''}`,
       STUB_NPM_LOG: sandbox.npmLogPath,
       GITHUB_OUTPUT: sandbox.githubOutputPath,
+      CLI_VERSION: '21.2.4',
+      CONFIG_VERSION: '21.1.0',
     },
   });
 
@@ -572,7 +571,12 @@ describe('Resolve commitlint cache key step', () => {
       );
       expect(outcome.status).toBe(0);
       expect(fs.readFileSync(sandbox.githubOutputPath, 'utf8')).toBe(
-        'key=21.2.4-21.1.0\n',
+        [
+          'cli-version=21.2.4',
+          'config-version=21.1.0',
+          'key=21.2.4-21.1.0',
+          '',
+        ].join('\n'),
       );
     } finally {
       fs.rmSync(sandbox.sandboxDir, { recursive: true, force: true });
@@ -593,6 +597,14 @@ describe('Resolve commitlint cache key step', () => {
     } finally {
       fs.rmSync(sandbox.sandboxDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('Checkout code step credentials (declared setting)', () => {
+  test('does not persist the write-capable token in .git/config', () => {
+    expect(extractStepBlock('Checkout code')).toContain(
+      'persist-credentials: false',
+    );
   });
 });
 
@@ -647,7 +659,7 @@ describe('Install commitlint step with the restored cache', () => {
       expect(fs.readFileSync(sandbox.npmLogPath, 'utf8')).toBe(
         [
           'init -y',
-          'install --no-fund --save-dev @commitlint/cli @commitlint/config-conventional',
+          'install --no-fund --ignore-scripts --save-dev @commitlint/cli@21.2.4 @commitlint/config-conventional@21.1.0',
           '',
         ].join('\n'),
       );

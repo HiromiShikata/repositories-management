@@ -38,9 +38,10 @@ jobs:
         working-directory: scripts/typescript
       - name: Test (changed since base)
         if: github.event_name == 'pull_request'
-        run: npx jest --changedSince=origin/${{ github.event.pull_request.base.ref }}
+        run: npx jest --changedSince="origin/$BASE_REF"
         working-directory: scripts/typescript
         env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Test (full suite)
         if: github.event_name != 'pull_request'
